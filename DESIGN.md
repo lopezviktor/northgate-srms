@@ -932,3 +932,703 @@ Additional Feature 2: Session timeout after inactivity
 Security event logging remains the strongest backup option if session timeout becomes unnecessarily complex during implementation.
 
 CSP may still be implemented as a simple defensive header, but it should not be relied on as one of the two main additional features unless one of the preferred features is dropped.
+
+---
+
+## 8. Testing Plan
+
+This section defines the testing plan before implementation. The aim is to verify that the system meets the required user stories, applies security controls consistently, and handles invalid or hostile input safely.
+
+Testing will include:
+
+- functional testing;
+- role-based access control testing;
+- security control testing;
+- negative testing;
+- input validation testing;
+- additional security feature testing.
+
+The testing approach follows the idea that security must be verified through both expected behaviour and misuse cases.
+
+### 8.1 Testing principles
+
+The system will be tested using the following principles:
+
+- test both authorised and unauthorised actions;
+- test successful and failed login attempts;
+- test that employees cannot access or modify other employees' records;
+- test that admin-only routes are protected server-side;
+- test all state-changing routes for CSRF protection;
+- test malicious or malformed input;
+- test that audit fields are updated automatically;
+- test the two selected additional security features;
+- avoid relying only on the user interface as proof of security.
+
+### 8.2 Test accounts
+
+The following demo accounts will be used for testing.
+
+| Username | Role | Purpose |
+|---|---|---|
+| `admin` | admin | Tests HR administrator functionality |
+| `alice` | employee | Tests normal employee access |
+| `bob` | employee | Tests access-control separation between employees |
+
+The README will include the test passwords for these accounts. Passwords stored in the database must be hashed, not plaintext.
+
+### 8.3 Functional user story tests
+
+| ID | User story / requirement | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| F1 | User can log in securely | Log in as `alice` with valid credentials | Alice is authenticated and redirected to her record/dashboard | Valid login succeeds and session is created |
+| F2 | User cannot log in with invalid credentials | Try logging in as `alice` with the wrong password | Login fails with a generic error message | No session is created |
+| F3 | User can log out securely | Log in, then submit logout form | Session is invalidated and user is redirected to login | Protected routes require login again |
+| F4 | Employee can view own record only | Log in as `alice` and open `/record` | Alice's own employee record is displayed | No other employee data is shown |
+| F5 | Admin can view all records | Log in as `admin` and open `/admin/records` | All employee records are listed | Admin can see Alice and Bob records |
+| F6 | Employee can update own phone | Log in as `alice`, update `phone` via `/record/update` | Alice's phone is updated | Database value changes for Alice only |
+| F7 | Employee can update own emergency contact | Log in as `alice`, update `emergency_contact` | Alice's emergency contact is updated | Database value changes for Alice only |
+| F8 | Admin can update permitted fields | Log in as `admin`, edit Bob's record | Admin-editable fields are updated | Bob's record changes and audit fields update |
+| F9 | Audit fields update automatically | Update a record as employee or admin | `last_updated_by` and `last_updated_at` change automatically | Audit fields reflect the acting user and update time |
+
+### 8.4 Access control tests
+
+| ID | Risk tested | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| AC1 | Employee attempts admin route | Log in as `alice` and visit `/admin/records` | Access is denied or redirected | Alice cannot view admin page |
+| AC2 | Employee attempts to view another record by ID | Log in as `alice` and try `/admin/records/view?id=2` | Access is denied | Alice cannot view Bob's record |
+| AC3 | Employee attempts to edit another record | Log in as `alice` and submit a crafted request targeting Bob's record | Request is rejected or ignored | Bob's record is unchanged |
+| AC4 | Employee submits admin-only fields | Log in as `alice` and submit `salary_band`, `address`, or `private_hr_notes` in the request | Fields are ignored or request is rejected | Admin-only fields are not changed |
+| AC5 | Unauthenticated user accesses protected page | Open `/record` without logging in | Redirect to login or unauthorised response | No record data is exposed |
+| AC6 | Unauthenticated user submits update | Submit POST request to `/record/update` without session | Request is rejected | No database update occurs |
+| AC7 | Admin route checks are server-side | Manually enter admin URLs as employee | Server denies access regardless of UI | Hidden links are not the only protection |
+
+### 8.5 SQL injection tests
+
+| ID | Area tested | Test input | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| SQL1 | Login form username | `' OR '1'='1' --` | Login fails | Injection does not bypass authentication |
+| SQL2 | Login form password | `' OR '1'='1' --` | Login fails | Query treats input as data |
+| SQL3 | Record update field | Submit SQL-like text in `emergency_contact` | Input is stored as text or rejected by validation | SQL query structure is not changed |
+| SQL4 | Admin record ID | Use malformed ID such as `1 OR 1=1` | Request is rejected or returns error safely | No unexpected records are returned or updated |
+
+All database operations must use prepared statements or parameterised queries.
+
+### 8.6 XSS tests
+
+| ID | Area tested | Test input | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| XSS1 | Employee editable field | `<script>alert(1)</script>` in `emergency_contact` | Payload is displayed as text or rejected | Script does not execute |
+| XSS2 | Admin editable HR notes | `<img src=x onerror=alert(1)>` in `private_hr_notes` | Payload is safely escaped or rejected | Browser does not execute JavaScript |
+| XSS3 | Stored XSS check | Save payload, log out, log in again, view record | Payload remains non-executable | Stored content does not execute |
+| XSS4 | Template rendering | View records containing special characters | Page renders safely | HTML structure is not broken |
+
+The application should use Go `html/template` for automatic contextual output escaping.
+
+### 8.7 CSRF tests
+
+| ID | Area tested | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| CSRF1 | Employee update without token | Submit POST to `/record/update` without CSRF token | Request is rejected | No record update occurs |
+| CSRF2 | Employee update with invalid token | Submit POST with wrong CSRF token | Request is rejected | No record update occurs |
+| CSRF3 | Employee update with valid token | Submit form normally | Request succeeds | Record updates correctly |
+| CSRF4 | Admin update without token | Submit POST to `/admin/records/update` without CSRF token | Request is rejected | No admin update occurs |
+| CSRF5 | Logout without token | Submit logout request without CSRF token | Request is rejected | Session remains valid or request fails safely |
+| CSRF6 | State-changing GET check | Try to update record using a GET request | Request does not perform update | GET routes do not change state |
+
+All state-changing actions must use `POST` and require a valid CSRF token.
+
+### 8.8 Session and cookie tests
+
+| ID | Area tested | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| S1 | Session creation | Log in with valid credentials | Session cookie is created | User can access protected routes |
+| S2 | Session cookie flags | Inspect session cookie in browser/dev tools | Cookie includes `HttpOnly` and `SameSite` | Required cookie attributes are present |
+| S3 | Session invalidation | Log out, then revisit `/record` | User is redirected to login | Old session no longer grants access |
+| S4 | Invalid session ID | Modify or delete session cookie | Access to protected routes is denied | Invalid session is not trusted |
+| S5 | Session identity source | Attempt to submit another user ID in a form | Server still uses session user ID | User cannot impersonate another account |
+
+If HTTPS is not used in the local development environment, the `Secure` cookie flag may be discussed as a production requirement rather than enforced locally.
+
+### 8.9 Password storage tests
+
+| ID | Area tested | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| P1 | Password hashing | Inspect users table after seed setup | Passwords are stored as hashes | No plaintext passwords exist |
+| P2 | Correct password verification | Log in with correct password | Login succeeds | Hash comparison works |
+| P3 | Wrong password verification | Log in with wrong password | Login fails | Wrong password is rejected |
+| P4 | Error/log safety | Check application output/logs during login | Passwords are not printed | No credentials appear in logs |
+
+### 8.10 Input validation tests
+
+| ID | Field | Invalid input | Expected behaviour |
+|---|---|---|---|
+| V1 | `phone` | Too short, letters only, or extremely long string | Rejected with safe error |
+| V2 | `emergency_contact` | Empty or too long | Rejected with safe error |
+| V3 | `email` | Invalid email format | Rejected for admin update |
+| V4 | `department` | Value outside approved list | Rejected |
+| V5 | `employment_status` | Value outside `active`, `on_leave`, `terminated` | Rejected |
+| V6 | `salary_band` | Value outside `A`–`E` | Rejected |
+| V7 | `private_hr_notes` | More than maximum allowed length | Rejected |
+| V8 | `record id` | Non-numeric or missing ID for admin edit | Request handled safely |
+
+Validation must happen server-side before database updates.
+
+### 8.11 Auditability tests
+
+| ID | Area tested | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|---|
+| A1 | Employee update audit | Alice updates her phone | `last_updated_by` becomes Alice's user ID | Audit identifies Alice |
+| A2 | Admin update audit | Admin updates Bob's record | `last_updated_by` becomes admin user ID | Audit identifies admin |
+| A3 | Timestamp update | Any successful update occurs | `last_updated_at` changes | Timestamp reflects latest update |
+| A4 | Failed update audit | Invalid update is submitted | Audit fields do not change | Failed actions do not create false record updates |
+
+### 8.12 Additional feature tests
+
+The current preferred additional security features are:
+
+1. Login rate limiting / temporary lockout
+2. Session timeout after inactivity
+
+#### 8.12.1 Login rate limiting / temporary lockout tests
+
+| ID | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|
+| AF1 | Submit 1–4 wrong passwords for the same username | Login remains available | User is not locked too early |
+| AF2 | Submit 5 wrong passwords for the same username | Login is temporarily blocked | Lockout is activated |
+| AF3 | Submit correct password during lockout | Login remains blocked | Lockout cannot be bypassed |
+| AF4 | Wait until lockout expires, then use correct password | Login succeeds | Lockout expires correctly |
+| AF5 | Successful login after previous failures below threshold | Failed counter resets | Future failures start from zero |
+
+#### 8.12.2 Session timeout tests
+
+| ID | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|
+| AF6 | Log in and make a request before timeout | Session remains valid | User stays authenticated |
+| AF7 | Log in and wait beyond timeout | Session is invalidated | User must log in again |
+| AF8 | Access protected route after timeout | Redirect to login | Expired session cannot access data |
+| AF9 | Log in again after timeout | New session is created | User can continue normally |
+
+If implementation time becomes a constraint, security event logging is the backup additional feature.
+
+### 8.13 Security event logging backup tests
+
+If security event logging is selected instead of session timeout, the following tests will apply.
+
+| ID | Test steps | Expected behaviour | Pass criteria |
+|---|---|---|---|
+| L1 | Successful login | Security event is recorded | Event type and timestamp exist |
+| L2 | Failed login | Security event is recorded | Failed attempt is traceable |
+| L3 | Employee attempts admin route | Access denied event is recorded | Suspicious action is traceable |
+| L4 | Employee updates own record | Update event is recorded | Record update is traceable |
+| L5 | CSRF validation fails | CSRF failure event is recorded | Security failure is traceable |
+| L6 | Inspect logged details | No passwords, tokens, or sensitive HR notes are stored | Logs do not expose secrets |
+
+### 8.14 Testing evidence for submission
+
+Testing evidence may include:
+
+- screenshots of successful and failed logins;
+- screenshots of employee and admin views;
+- screenshots showing denied access;
+- screenshots showing validation errors;
+- database screenshots or query output showing audit fields;
+- short notes explaining manual test results;
+- optional Go test output if unit tests are added.
+
+The README should explain how to run the application and which demo accounts to use.
+
+### 8.15 Pass/fail recording format
+
+During implementation, test results can be recorded using this format:
+
+| Test ID | Date | Result | Evidence / notes |
+|---|---|---|---|
+| F1 | TBD | Pass/Fail | TBD |
+| AC1 | TBD | Pass/Fail | TBD |
+| SQL1 | TBD | Pass/Fail | TBD |
+| XSS1 | TBD | Pass/Fail | TBD |
+| CSRF1 | TBD | Pass/Fail | TBD |
+| AF1 | TBD | Pass/Fail | TBD |
+
+This will make the report's Testing and Results section easier to write later.
+
+---
+
+## 9. Implementation Roadmap
+
+This section defines the planned implementation order. The goal is to build the system in small, testable stages, applying security controls consistently rather than adding them at the end.
+
+The implementation should follow this order:
+
+1. Project structure
+2. Database schema and seed data
+3. Basic HTTP server and templates
+4. Authentication and sessions
+5. Employee record view
+6. Employee record update
+7. Admin record list and view
+8. Admin record update
+9. CSRF protection
+10. Input validation
+11. Additional security features
+12. Testing and evidence collection
+13. README and final report preparation
+
+### 9.1 Phase 1: Project structure
+
+Create the basic Go project structure.
+
+Planned structure:
+
+```text
+northgate-srms/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── auth/
+│   ├── csrf/
+│   ├── handlers/
+│   ├── middleware/
+│   ├── storage/
+│   ├── validation/
+│   └── security/
+├── templates/
+├── static/
+├── README.md
+├── DESIGN.md
+├── go.mod
+└── .gitignore
+```
+
+Purpose:
+
+- keep responsibilities separated;
+- avoid placing all logic in one file;
+- make authentication, storage, validation, and handlers easier to test and maintain.
+
+Expected outcome:
+
+```text
+The project compiles and has a clean folder structure.
+```
+
+### 9.2 Phase 2: Database schema and seed data
+
+Implement SQLite database setup.
+
+Tasks:
+
+- create `users` table;
+- create `employee_records` table;
+- add seed users:
+  - `admin`
+  - `alice`
+  - `bob`
+- store only bcrypt password hashes;
+- create linked employee records for each user.
+
+Expected outcome:
+
+```text
+The application can initialise the database and create demo data safely.
+```
+
+Security focus:
+
+- no plaintext passwords in the database;
+- foreign key relationship between users and employee records;
+- audit fields present from the start.
+
+### 9.3 Phase 3: Basic HTTP server and templates
+
+Create the initial web server using Go `net/http`.
+
+Tasks:
+
+- start HTTP server;
+- add route registration;
+- add basic templates;
+- render pages using `html/template`;
+- create simple layout or shared template structure if useful.
+
+Initial routes:
+
+```text
+GET /
+GET /login
+```
+
+Expected outcome:
+
+```text
+The server runs locally and renders basic pages.
+```
+
+Security focus:
+
+- use `html/template`, not unsafe manual HTML construction;
+- avoid exposing internal errors to the user.
+
+### 9.4 Phase 4: Authentication and sessions
+
+Implement login and logout.
+
+Tasks:
+
+- build login form;
+- process login using username and password;
+- retrieve user with prepared statement;
+- compare password using bcrypt;
+- create unpredictable session ID;
+- store session server-side;
+- set session cookie with secure attributes;
+- implement logout.
+
+Routes:
+
+```text
+GET  /login
+POST /login
+POST /logout
+```
+
+Expected outcome:
+
+```text
+Users can log in and log out securely.
+```
+
+Security focus:
+
+- password hashes only;
+- generic login failure messages;
+- `HttpOnly` and `SameSite` cookie attributes;
+- session invalidation on logout.
+
+### 9.5 Phase 5: Employee record view
+
+Implement employee access to their own record.
+
+Route:
+
+```text
+GET /record
+```
+
+Tasks:
+
+- require authentication;
+- retrieve current user from session;
+- fetch employee record using `currentUser.id`;
+- display only the authenticated employee's own record.
+
+Expected outcome:
+
+```text
+An employee can view their own HR record only.
+```
+
+Security focus:
+
+- do not accept employee record ID from the browser;
+- use server-side session identity;
+- prevent IDOR by design.
+
+### 9.6 Phase 6: Employee record update
+
+Implement employee update of low-risk fields.
+
+Routes:
+
+```text
+GET  /record/edit
+POST /record/update
+```
+
+Tasks:
+
+- show editable form for:
+  - `phone`
+  - `emergency_contact`
+- validate input server-side;
+- update only those two fields;
+- update `last_updated_by`;
+- update `last_updated_at`;
+- use prepared statements.
+
+Expected outcome:
+
+```text
+Employees can update only their own phone and emergency contact.
+```
+
+Security focus:
+
+- reject or ignore admin-only fields submitted by employees;
+- use `WHERE user_id = currentUser.id`;
+- prevent unauthorised modification of sensitive HR fields.
+
+### 9.7 Phase 7: Admin record list and view
+
+Implement HR admin record access.
+
+Routes:
+
+```text
+GET /admin/records
+GET /admin/records/view?id={id}
+```
+
+Tasks:
+
+- require authentication;
+- require admin role;
+- list all employee records;
+- allow admin to view one selected record.
+
+Expected outcome:
+
+```text
+Admins can view all employee records. Employees cannot access admin pages.
+```
+
+Security focus:
+
+- enforce admin role server-side;
+- do not rely on hidden UI links;
+- handle invalid or missing IDs safely.
+
+### 9.8 Phase 8: Admin record update
+
+Implement admin update functionality.
+
+Routes:
+
+```text
+GET  /admin/records/edit?id={id}
+POST /admin/records/update
+```
+
+Tasks:
+
+- require authentication;
+- require admin role;
+- validate all editable fields;
+- update permitted non-ID fields;
+- prevent direct updates to:
+  - `id`
+  - `user_id`
+  - `last_updated_by`
+  - `last_updated_at`
+- update audit fields automatically.
+
+Expected outcome:
+
+```text
+Admins can update employee records while technical and audit fields remain system-controlled.
+```
+
+Security focus:
+
+- explicit admin authorisation;
+- server-side validation;
+- prepared statements;
+- automatic auditability.
+
+### 9.9 Phase 9: CSRF protection
+
+Add CSRF protection to all state-changing actions.
+
+Protected routes:
+
+```text
+POST /login
+POST /logout
+POST /record/update
+POST /admin/records/update
+```
+
+Tasks:
+
+- generate CSRF token;
+- store token server-side or associate it with the session;
+- include token as hidden field in forms;
+- verify token on POST requests;
+- reject missing or invalid tokens.
+
+Expected outcome:
+
+```text
+State-changing requests without valid CSRF tokens are rejected.
+```
+
+Security focus:
+
+- no state-changing `GET` requests;
+- all sensitive POST actions require CSRF validation.
+
+### 9.10 Phase 10: Input validation
+
+Centralise server-side validation.
+
+Tasks:
+
+- validate `phone`;
+- validate `emergency_contact`;
+- validate `email`;
+- validate name fields;
+- validate department whitelist;
+- validate employment status whitelist;
+- validate salary band whitelist;
+- validate max lengths for HR notes.
+
+Expected outcome:
+
+```text
+Invalid, malformed, or oversized input is rejected before database update.
+```
+
+Security focus:
+
+- never trust form input;
+- validate before database operations;
+- return safe error messages.
+
+### 9.11 Phase 11: Additional security features
+
+Implement the selected additional security features.
+
+Current selected features:
+
+```text
+Feature 1: Login rate limiting / temporary lockout
+Feature 2: Session timeout after inactivity
+```
+
+#### Login rate limiting / temporary lockout
+
+Tasks:
+
+- track failed login attempts;
+- lock login temporarily after repeated failures;
+- reset failed attempts after successful login;
+- use generic error messages.
+
+Expected outcome:
+
+```text
+Repeated failed login attempts trigger a temporary lockout.
+```
+
+#### Session timeout after inactivity
+
+Tasks:
+
+- store `last_activity` in the session;
+- check inactivity on protected routes;
+- invalidate expired sessions;
+- redirect expired users to login.
+
+Expected outcome:
+
+```text
+Inactive sessions expire automatically.
+```
+
+Backup feature if needed:
+
+```text
+Security event logging
+```
+
+### 9.12 Phase 12: Testing and evidence collection
+
+Run and record tests from the testing plan.
+
+Tasks:
+
+- test functional requirements;
+- test access control;
+- test SQL injection resistance;
+- test XSS handling;
+- test CSRF protection;
+- test session behaviour;
+- test password hashing;
+- test input validation;
+- test additional security features;
+- capture evidence.
+
+Expected outcome:
+
+```text
+Each required user story and security feature has clear test evidence.
+```
+
+Evidence may include:
+
+- screenshots;
+- terminal output;
+- database query results;
+- short testing notes;
+- optional Go test output.
+
+### 9.13 Phase 13: README and final report preparation
+
+Prepare submission documentation.
+
+README should include:
+
+- project description;
+- how to run the application;
+- demo login credentials;
+- security features implemented;
+- AI use statement;
+- known limitations.
+
+Final report should use the design work from this document, especially:
+
+- project definition;
+- data model;
+- access control matrix;
+- route map;
+- threat model;
+- additional security feature decisions;
+- testing results;
+- evaluation and limitations.
+
+Expected outcome:
+
+```text
+The project is ready for assessment submission with code, README, testing evidence, and report.
+```
+
+### 9.14 Implementation discipline
+
+During implementation:
+
+- build one feature at a time;
+- commit after each stable milestone;
+- do not add new features unless they support the assessment requirements;
+- test each security control as soon as it is implemented;
+- keep code simple, readable, and defensive;
+- prioritise consistency over cleverness.
+
+Suggested commit sequence:
+
+```text
+Add project structure
+Add database schema and seed data
+Add basic HTTP server and templates
+Add authentication and sessions
+Add employee record view
+Add employee record update
+Add admin record views
+Add admin record update
+Add CSRF protection
+Add input validation
+Add login rate limiting
+Add session timeout
+Add testing evidence and README
+```
+
