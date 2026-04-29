@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Go
+*.exe
+*.test
+*.out
+vendor/
+
+# Environment files
+.env
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
