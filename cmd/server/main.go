@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
+	"northgate-srms/internal/handlers"
 	"northgate-srms/internal/storage"
 )
 
@@ -24,10 +24,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Northgate Stores SRMS is running")
-	})
+	mux.HandleFunc("/", handlers.Home)
 
 	addr := ":8080"
 
