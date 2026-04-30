@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"northgate-srms/internal/auth"
 	"northgate-srms/internal/handlers"
 	"northgate-srms/internal/storage"
 )
@@ -23,8 +24,14 @@ func main() {
 		log.Fatalf("seed data failed: %v", err)
 	}
 
+	sessionManager := auth.NewSessionManager()
+	authHandler := handlers.NewAuthHandler(db, sessionManager)
+	homeHandler := handlers.NewHomeHandler(sessionManager)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handlers.Home)
+	mux.HandleFunc("/", homeHandler.Home)
+	mux.HandleFunc("GET /login", authHandler.ShowLogin)
+	mux.HandleFunc("POST /login", authHandler.Login)
 
 	addr := ":8080"
 
