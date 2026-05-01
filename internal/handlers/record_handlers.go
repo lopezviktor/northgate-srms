@@ -19,6 +19,13 @@ type RecordPageData struct {
 	Record   storage.EmployeeRecord
 }
 
+type RecordEditPageData struct {
+	Username string
+	Role     string
+	Record   storage.EmployeeRecord
+	Error    string
+}
+
 func NewRecordHandler(db *sql.DB, sessions *auth.SessionManager) *RecordHandler {
 	return &RecordHandler{
 		DB:       db,
@@ -51,4 +58,76 @@ func (h *RecordHandler) ViewOwnRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	RenderTemplate(w, "record.html", data)
+}
+
+func (h *RecordHandler) EditOwnRecord(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.Sessions.Get(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	record, err := storage.GetEmployeeRecordByUserID(h.DB, session.User.ID)
+	if err != nil {
+		if errors.Is(err, storage.ErrRecordNotFound) {
+			http.Error(w, "Employee record not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	data := RecordEditPageData{
+		Username: session.User.Username,
+		Role:     session.User.Role,
+		Record:   record,
+	}
+
+	RenderTemplate(w, "record_edit.html", data)
+}
+
+func (h *RecordHandler) UpdateOwnRecord(w http.ResponseWriter, r *http.Request) {
+	session, ok := h.Sessions.Get(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	phone := r.FormValue("phone")
+	emergencyContact := r.FormValue("emergency_contact")
+
+	if phone == "" || emergencyContact == "" {
+		h.renderEditFormWithError(w, session, "Phone and emergency contact are required.")
+		return
+	}
+
+	if len(phone) > 20 || len(emergencyContact) > 120 {
+		h.renderEditFormWithError(w, session, "Input is too long")
+		return
+	}
+
+	if err := storage.UpdateEmployeeContactFields(h.DB, session.User.ID, phone, emergencyContact); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/record", http.StatusSeeOther)
+}
+
+func (h *RecordHandler) renderEditFormWithError(w http.ResponseWriter, session auth.Session, message string) {
+	record, err := storage.GetEmployeeRecordByUserID(h.DB, session.User.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	data := RecordEditPageData{
+		Username: session.User.Username,
+		Role:     session.User.Role,
+		Record:   record,
+		Error:    message,
+	}
+
+	RenderTemplate(w, "record_edit.html", data)
 }

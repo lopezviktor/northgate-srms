@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edit My HR Record - Northgate Stores SRMS</title>
+</head>
+<body>
+    <h1>Edit My HR Record</h1>
+    <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
+    <p><a href="/record">Back to my record</a></p>
+
+    {{if .Error}}
+        <p style="color: red;">{{.Error}}</p>
+    {{end}}
+
+    <form method="POST" action="/record/update">
+        <div>
+            <label for="phone">Phone</label><br>
+            <input
+                type="text"
+                id="phone"
+                name="phone"
+                value="{{.Record.Phone}}"
+                required
+                maxlength="20"
+            >
+        </div>
+        <br>
+        <div>
+            <label for="emergency_contact">Emergency contact</label><br>
+            <input
+                type="text"
+                id="emergency_contact"
+                name="emergency_contact"
+                value="{{.Record.EmergencyContact}}"
+                required
+                maxlength="120"
+            >
+        </div>
+        <br>
+        <button type="submit">Save changes</button>
+    </form>
+    <hr>
+    <p>
+        Only phone and emergency contact can be updated by employees.
+        Other HR fields require administrator review.
+    </p>
+</body>
+</html>

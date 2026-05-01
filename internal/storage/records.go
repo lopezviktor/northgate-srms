@@ -77,3 +77,32 @@ func GetEmployeeRecordByUserID(db *sql.DB, userID int64) (EmployeeRecord, error)
 	}
 	return record, nil
 }
+
+func UpdateEmployeeContactFields(db *sql.DB, userID int64, phone string, emergencyContact string) error {
+	result, err := db.Exec(
+		`UPDATE employee_records
+		 SET phone = ?,
+		     emergency_contact = ?,
+		     last_updated_by = ?,
+		     last_updated_at = CURRENT_TIMESTAMP
+		 WHERE user_id = ?`,
+		phone,
+		emergencyContact,
+		userID,
+		userID,
+	)
+	if err != nil {
+		return fmt.Errorf("update employee contact fields: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check updated employee contact rows: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrRecordNotFound
+	}
+
+	return nil
+}
