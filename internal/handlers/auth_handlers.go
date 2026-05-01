@@ -76,3 +76,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	h.Sessions.Destroy(w, r)
+
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}

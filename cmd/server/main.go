@@ -32,6 +32,7 @@ func main() {
 	mux.HandleFunc("/", homeHandler.Home)
 	mux.HandleFunc("GET /login", authHandler.ShowLogin)
 	mux.HandleFunc("POST /login", authHandler.Login)
+	mux.HandleFunc("POST /logout", authHandler.Logout)
 
 	addr := ":8080"
 
