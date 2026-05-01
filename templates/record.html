@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My HR Record - Northgate Stores SRMS</title>
+</head>
+<body>
+    <h1>My HR Record</h1>
+
+    <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
+    <p><a href="/">Home</a></p>
+
+    <form method="POST" action="/logout">
+        <button type="submit">Log out</button>
+    </form>
+
+    <hr>
+
+    <h2>Personal Details</h2>
+
+    <p><strong>Name:</strong> {{.Record.FirstName}} {{.Record.LastName}}</p>
+    <p><strong>Email:</strong> {{.Record.Email}}</p>
+    <p><strong>Phone:</strong> {{.Record.Phone}}</p>
+    <p><strong>Address:</strong> {{.Record.Address}}</p>
+    <p><strong>Emergency contact:</strong> {{.Record.EmergencyContact}}</p>
+
+    <h2>Employment Details</h2>
+
+    <p><strong>Department:</strong> {{.Record.Department}}</p>
+    <p><strong>Job title:</strong> {{.Record.JobTitle}}</p>
+    <p><strong>Employment status:</strong> {{.Record.EmploymentStatus}}</p>
+    <p><strong>Salary band:</strong> {{.Record.SalaryBand}}</p>
+
+    <h2>HR Notes</h2>
+
+    <p><strong>Accessibility notes:</strong> {{.Record.AccessibilityNotes}}</p>
+
+    <h2>Audit Information</h2>
+
+    <p><strong>Last updated by user ID:</strong> {{.Record.LastUpdatedBy}}</p>
+    <p><strong>Last updated at:</strong> {{.Record.LastUpdatedAt}}</p>
+
+    <hr>
+    <p><a href="/record/edit">Edit allowed fields</a></p>
+</body>
+</html>

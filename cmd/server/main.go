@@ -27,12 +27,14 @@ func main() {
 	sessionManager := auth.NewSessionManager()
 	authHandler := handlers.NewAuthHandler(db, sessionManager)
 	homeHandler := handlers.NewHomeHandler(sessionManager)
+	recordHandler := handlers.NewRecordHandler(db, sessionManager)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", homeHandler.Home)
 	mux.HandleFunc("GET /login", authHandler.ShowLogin)
 	mux.HandleFunc("POST /login", authHandler.Login)
 	mux.HandleFunc("POST /logout", authHandler.Logout)
+	mux.HandleFunc("GET /record", recordHandler.ViewOwnRecord)
 
 	addr := ":8080"
 
