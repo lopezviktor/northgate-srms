@@ -35,11 +35,15 @@ func main() {
 	mux.HandleFunc("GET /login", authHandler.ShowLogin)
 	mux.HandleFunc("POST /login", authHandler.Login)
 	mux.HandleFunc("POST /logout", authHandler.Logout)
+
 	mux.HandleFunc("GET /record", recordHandler.ViewOwnRecord)
 	mux.HandleFunc("GET /record/edit", recordHandler.EditOwnRecord)
 	mux.HandleFunc("POST /record/update", recordHandler.UpdateOwnRecord)
+
 	mux.HandleFunc("GET /admin/records", adminHandler.ListRecords)
 	mux.HandleFunc("GET /admin/records/view", adminHandler.ViewRecord)
+	mux.HandleFunc("GET /admin/records/edit", adminHandler.EditRecord)
+	mux.HandleFunc("POST /admin/records/update", adminHandler.UpdateRecord)
 
 	addr := ":8080"
 

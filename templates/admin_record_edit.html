@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Edit HR Record - Northgate Stores SRMS</title>
+</head>
+
+<body>
+    <h1>Edit Employee HR Record</h1>
+
+    <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
+
+    <p><a href="/admin/records/view?id={{.Record.ID}}">Back to record details</a></p>
+    <p><a href="/admin/records">Back to all records</a></p>
+    <p><a href="/">Home</a></p>
+
+    {{if .Error}}
+    <p style="color: red;">{{.Error}}</p>
+    {{end}}
+
+    <hr>
+
+    <form method="POST" action="/admin/records/update">
+        <input type="hidden" name="id" value="{{.Record.ID}}">
+
+        <h2>Personal Details</h2>
+
+        <div>
+            <label for="first_name">First name</label><br>
+            <input type="text" id="first_name" name="first_name" value="{{.Record.FirstName}}" required maxlength="50">
+        </div>
+
+        <br>
+
+        <div>
+            <label for="last_name">Last name</label><br>
+            <input type="text" id="last_name" name="last_name" value="{{.Record.LastName}}" required maxlength="50">
+        </div>
+
+        <br>
+
+        <div>
+            <label for="email">Email</label><br>
+            <input type="email" id="email" name="email" value="{{.Record.Email}}" required maxlength="120">
+        </div>
+
+        <br>
+
+        <div>
+            <label for="phone">Phone</label><br>
+            <input type="text" id="phone" name="phone" value="{{.Record.Phone}}" required maxlength="20">
+        </div>
+
+        <br>
+
+        <div>
+            <label for="address">Address</label><br>
+            <input type="text" id="address" name="address" value="{{.Record.Address}}" required maxlength="150">
+        </div>
+
+        <br>
+
+        <div>
+            <label for="emergency_contact">Emergency contact</label><br>
+            <input type="text" id="emergency_contact" name="emergency_contact" value="{{.Record.EmergencyContact}}"
+                required maxlength="120">
+        </div>
+
+        <h2>Employment Details</h2>
+
+        <div>
+            <label for="department">Department</label><br>
+            <select id="department" name="department" required>
+                <option value="Sales" {{if eq .Record.Department "Sales" }}selected{{end}}>Sales</option>
+                <option value="Stockroom" {{if eq .Record.Department "Stockroom" }}selected{{end}}>Stockroom</option>
+                <option value="Management" {{if eq .Record.Department "Management" }}selected{{end}}>Management</option>
+                <option value="HR" {{if eq .Record.Department "HR" }}selected{{end}}>HR</option>
+                <option value="Operations" {{if eq .Record.Department "Operations" }}selected{{end}}>Operations</option>
+            </select>
+        </div>
+
+        <br>
+
+        <div>
+            <label for="job_title">Job title</label><br>
+            <input type="text" id="job_title" name="job_title" value="{{.Record.JobTitle}}" required maxlength="60">
+        </div>
+
+        <br>
+
+        <div>
+            <label for="employment_status">Employment status</label><br>
+            <select id="employment_status" name="employment_status" required>
+                <option value="active" {{if eq .Record.EmploymentStatus "active" }}selected{{end}}>active</option>
+                <option value="on_leave" {{if eq .Record.EmploymentStatus "on_leave" }}selected{{end}}>on_leave</option>
+                <option value="terminated" {{if eq .Record.EmploymentStatus "terminated" }}selected{{end}}>terminated
+                </option>
+            </select>
+        </div>
+
+        <br>
+
+        <div>
+            <label for="salary_band">Salary band</label><br>
+            <select id="salary_band" name="salary_band" required>
+                <option value="A" {{if eq .Record.SalaryBand "A" }}selected{{end}}>A</option>
+                <option value="B" {{if eq .Record.SalaryBand "B" }}selected{{end}}>B</option>
+                <option value="C" {{if eq .Record.SalaryBand "C" }}selected{{end}}>C</option>
+                <option value="D" {{if eq .Record.SalaryBand "D" }}selected{{end}}>D</option>
+                <option value="E" {{if eq .Record.SalaryBand "E" }}selected{{end}}>E</option>
+            </select>
+        </div>
+
+        <h2>HR Notes</h2>
+
+        <div>
+            <label for="accessibility_notes">Accessibility notes</label><br>
+            <textarea id="accessibility_notes" name="accessibility_notes" maxlength="500" rows="4"
+                cols="60">{{.Record.AccessibilityNotes}}</textarea>
+        </div>
+
+        <br>
+
+        <div>
+            <label for="private_hr_notes">Private HR notes</label><br>
+            <textarea id="private_hr_notes" name="private_hr_notes" maxlength="1000" rows="5"
+                cols="60">{{.Record.PrivateHRNotes}}</textarea>
+        </div>
+
+        <br>
+
+        <button type="submit">Save changes</button>
+    </form>
+
+    <hr>
+
+    <p>
+        Technical identifiers and audit fields are controlled by the system and cannot be edited directly.
+    </p>
+</body>
+
+</html>

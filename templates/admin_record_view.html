@@ -11,6 +11,7 @@
 
     <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
     <p><a href="/admin/records">Back to all records</a></p>
+    <p><a href="/admin/records/edit?id={{.Record.ID}}">Edit this record</a></p>
     <p><a href="/">Home</a></p>
 
     <form method="POST" action="/logout">

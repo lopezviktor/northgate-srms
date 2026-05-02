@@ -219,3 +219,49 @@ func GetEmployeeRecordByID(db *sql.DB, recordID int64) (EmployeeRecord, error) {
 	}
 	return record, nil
 }
+
+func UpdateEmployeeRecordByAdmin(db *sql.DB, record EmployeeRecord, adminUserID int64) error {
+	result, err := db.Exec(
+		`UPDATE employee_records
+		 SET first_name = ?,
+		     last_name = ?,
+		     email = ?,
+		     phone = ?,
+		     address = ?,
+		     emergency_contact = ?,
+		     department = ?,
+		     job_title = ?,
+		     employment_status = ?,
+		     salary_band = ?,
+		     accessibility_notes = ?,
+		     private_hr_notes = ?,
+		     last_updated_by = ?,
+		     last_updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		record.FirstName,
+		record.LastName,
+		record.Email,
+		record.Phone,
+		record.Address,
+		record.EmergencyContact,
+		record.Department,
+		record.JobTitle,
+		record.EmploymentStatus,
+		record.SalaryBand,
+		record.AccessibilityNotes,
+		record.PrivateHRNotes,
+		adminUserID,
+		record.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update employee record by admin: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check updated admin employee record rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
+}
