@@ -1,24 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Northgate Stores SRMS</title>
 </head>
+
 <body>
     <h1>Northgate Stores – Secure HR Records System</h1>
 
     {{if .IsAuthenticated}}
-        <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
-        <p><a href="/record">View my HR record</a></p>
-        
-        <form method="POST" action="/logout">
-            <button type="submit">Log out</button>
-        </form>
-    {{else}}
-        <p>You are not logged in.</p>
-        <p><a href="/login">Log in</a></p>
+    <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
+    <p><a href="/record">View my HR record</a></p>
+
+    {{if eq .Role "admin"}}
+    <p><a href="/admin/records">View all HR records</a></p>
     {{end}}
 
-    <p>This system manages employee HR records using secure authentication, role-based access control, auditability, and defensive input handling.</p>
+    <form method="POST" action="/logout">
+        <button type="submit">Log out</button>
+    </form>
+    {{else}}
+
+    <p>You are not logged in.</p>
+    <p><a href="/login">Log in</a></p>
+    {{end}}
+
+    <p>This system manages employee HR records using secure authentication, role-based access control, auditability, and
+        defensive input handling.</p>
 </body>
+
 </html>

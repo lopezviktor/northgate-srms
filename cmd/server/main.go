@@ -28,6 +28,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, sessionManager)
 	homeHandler := handlers.NewHomeHandler(sessionManager)
 	recordHandler := handlers.NewRecordHandler(db, sessionManager)
+	adminHandler := handlers.NewAdminHandler(db, sessionManager)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", homeHandler.Home)
@@ -37,6 +38,8 @@ func main() {
 	mux.HandleFunc("GET /record", recordHandler.ViewOwnRecord)
 	mux.HandleFunc("GET /record/edit", recordHandler.EditOwnRecord)
 	mux.HandleFunc("POST /record/update", recordHandler.UpdateOwnRecord)
+	mux.HandleFunc("GET /admin/records", adminHandler.ListRecords)
+	mux.HandleFunc("GET /admin/records/view", adminHandler.ViewRecord)
 
 	addr := ":8080"
 

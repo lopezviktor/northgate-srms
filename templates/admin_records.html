@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>All HR Records - Northgate Stores SRMS</title>
+</head>
+
+<body>
+    <h1>All Employee HR Records</h1>
+    <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
+    <p><a href="/">Home</a></p>
+    <form method="POST" action="/logout">
+        <button type="submit">Log out</button>
+    </form>
+    <hr>
+    <table border="1" cellpadding="6">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>User ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Job title</th>
+                <th>Employment status</th>
+                <th>Salary band</th>
+                <th>Last updated at</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Records}}
+            <tr>
+                <td>{{.ID}}</td>
+                <td>{{.UserID}}</td>
+                <td>{{.FirstName}} {{.LastName}}</td>
+                <td>{{.Email}}</td>
+                <td>{{.Department}}</td>
+                <td>{{.JobTitle}}</td>
+                <td>{{.EmploymentStatus}}</td>
+                <td>{{.SalaryBand}}</td>
+                <td>{{.LastUpdatedAt}}</td>
+                <td><a href="/admin/records/view?id={{.ID}}">View</a></td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="10">No records found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</body>
+
+</html>
