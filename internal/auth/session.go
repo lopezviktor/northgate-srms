@@ -9,6 +9,7 @@ import (
 )
 
 const SessionCookieName = "northgate_session"
+const SessionInactivityTimeout = 15 * time.Minute
 
 type User struct {
 	ID       int64
@@ -79,7 +80,14 @@ func (m *SessionManager) Get(r *http.Request) (Session, bool) {
 	if !ok {
 		return Session{}, false
 	}
-	session.LastActivity = time.Now()
+
+	now := time.Now()
+	if now.Sub(session.LastActivity) > SessionInactivityTimeout {
+		delete(m.sessions, cookie.Value)
+		return Session{}, false
+	}
+
+	session.LastActivity = now
 	m.sessions[cookie.Value] = session
 
 	return session, true
