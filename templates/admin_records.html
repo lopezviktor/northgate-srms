@@ -11,6 +11,7 @@
     <p>Logged in as <strong>{{.Username}}</strong> ({{.Role}}).</p>
     <p><a href="/">Home</a></p>
     <form method="POST" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button type="submit">Log out</button>
     </form>
     <hr>

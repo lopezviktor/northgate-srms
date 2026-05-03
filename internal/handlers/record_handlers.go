@@ -7,6 +7,7 @@ import (
 	"northgate-srms/internal/auth"
 	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/storage"
+	"northgate-srms/internal/validation"
 )
 
 type RecordHandler struct {
@@ -16,9 +17,10 @@ type RecordHandler struct {
 }
 
 type RecordPageData struct {
-	Username string
-	Role     string
-	Record   storage.EmployeeRecord
+	Username  string
+	Role      string
+	Record    storage.EmployeeRecord
+	CSRFToken string
 }
 
 type RecordEditPageData struct {
@@ -43,6 +45,11 @@ func (h *RecordHandler) ViewOwnRecord(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	record, err := storage.GetEmployeeRecordByUserID(h.DB, session.User.ID)
 	if err != nil {
@@ -56,9 +63,10 @@ func (h *RecordHandler) ViewOwnRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := RecordPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Record:   record,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Record:    record,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "record.html", data)
@@ -116,8 +124,13 @@ func (h *RecordHandler) UpdateOwnRecord(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if len(phone) > 20 || len(emergencyContact) > 120 {
-		h.renderEditFormWithError(w, session, "Input is too long")
+	if !validation.IsValidPhone(phone) {
+		h.renderEditFormWithError(w, session, "Phone must be 7–20 characters and contain only numbers, spaces, plus signs, or hyphens")
+		return
+	}
+
+	if !validation.IsValidEmergencyContact(emergencyContact) {
+		h.renderEditFormWithError(w, session, "Emergency contact must be between 5 and 120 characters.")
 		return
 	}
 

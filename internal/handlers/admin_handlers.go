@@ -4,10 +4,12 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
+
 	"northgate-srms/internal/auth"
 	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/storage"
-	"strconv"
+	"northgate-srms/internal/validation"
 )
 
 type AdminHandler struct {
@@ -17,15 +19,17 @@ type AdminHandler struct {
 }
 
 type AdminRecordsPageData struct {
-	Username string
-	Role     string
-	Records  []storage.EmployeeRecord
+	Username  string
+	Role      string
+	Records   []storage.EmployeeRecord
+	CSRFToken string
 }
 
 type AdminRecordViewPageData struct {
-	Username string
-	Role     string
-	Record   storage.EmployeeRecord
+	Username  string
+	Role      string
+	Record    storage.EmployeeRecord
+	CSRFToken string
 }
 
 type AdminRecordEditPageData struct {
@@ -49,7 +53,13 @@ func (h *AdminHandler) ListRecords(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
 
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+
+	}
 	records, err := storage.GetAllEmployeeRecords(h.DB)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -57,9 +67,10 @@ func (h *AdminHandler) ListRecords(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := AdminRecordsPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Records:  records,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Records:   records,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "admin_records.html", data)
@@ -68,6 +79,12 @@ func (h *AdminHandler) ListRecords(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) ViewRecord(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.requireAdmin(w, r)
 	if !ok {
+		return
+	}
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
+
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -89,9 +106,10 @@ func (h *AdminHandler) ViewRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := AdminRecordViewPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Record:   record,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Record:    record,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "admin_record_view.html", data)
@@ -195,28 +213,63 @@ func (h *AdminHandler) UpdateRecord(w http.ResponseWriter, r *http.Request) {
 		PrivateHRNotes:     r.FormValue("private_hr_notes"),
 	}
 
-	if hasEmptyRequiredAdminFields(record) {
-		h.renderAdminEditFormWithError(w, session, record, "Required fields cannot be empty.")
+	if !validation.IsValidName(record.FirstName) {
+		h.renderAdminEditFormWithError(w, session, record, "First name must be between 2 and 50 characters.")
 		return
 	}
 
-	if hasTooLongAdminFields(record) {
-		h.renderAdminEditFormWithError(w, session, record, "One or more fields are too long.")
+	if !validation.IsValidName(record.LastName) {
+		h.renderAdminEditFormWithError(w, session, record, "Last name must be between 2 and 50 characters.")
 		return
 	}
 
-	if !isAllowedDepartment(record.Department) {
+	if !validation.IsValidEmail(record.Email) {
+		h.renderAdminEditFormWithError(w, session, record, "Email must be a valid email address.")
+		return
+	}
+
+	if !validation.IsValidPhone(record.Phone) {
+		h.renderAdminEditFormWithError(w, session, record, "Phone must be 7–20 characters and contain only numbers, spaces, plus signs, or hyphens.")
+		return
+	}
+
+	if !validation.IsValidAddress(record.Address) {
+		h.renderAdminEditFormWithError(w, session, record, "Address must be between 5 and 150 characters.")
+		return
+	}
+
+	if !validation.IsValidEmergencyContact(record.EmergencyContact) {
+		h.renderAdminEditFormWithError(w, session, record, "Emergency contact must be between 5 and 120 characters.")
+		return
+	}
+
+	if !validation.IsAllowedDepartment(record.Department) {
 		h.renderAdminEditFormWithError(w, session, record, "Invalid department.")
 		return
 	}
 
-	if !isAllowedEmploymentStatus(record.EmploymentStatus) {
+	if !validation.IsValidJobTitle(record.JobTitle) {
+		h.renderAdminEditFormWithError(w, session, record, "Job title must be between 2 and 60 characters.")
+		return
+	}
+
+	if !validation.IsAllowedEmploymentStatus(record.EmploymentStatus) {
 		h.renderAdminEditFormWithError(w, session, record, "Invalid employment status.")
 		return
 	}
 
-	if !isAllowedSalaryBand(record.SalaryBand) {
+	if !validation.IsAllowedSalaryBand(record.SalaryBand) {
 		h.renderAdminEditFormWithError(w, session, record, "Invalid salary band.")
+		return
+	}
+
+	if !validation.IsValidAccessibilityNotes(record.AccessibilityNotes) {
+		h.renderAdminEditFormWithError(w, session, record, "Accessibility notes must be 500 characters or fewer.")
+		return
+	}
+
+	if !validation.IsValidPrivateHRNotes(record.PrivateHRNotes) {
+		h.renderAdminEditFormWithError(w, session, record, "Private HR notes must be 1000 characters or fewer.")
 		return
 	}
 
@@ -249,56 +302,4 @@ func (h *AdminHandler) renderAdminEditFormWithError(w http.ResponseWriter, sessi
 	}
 
 	RenderTemplate(w, "admin_record_edit.html", data)
-}
-
-func hasEmptyRequiredAdminFields(record storage.EmployeeRecord) bool {
-	return record.FirstName == "" ||
-		record.LastName == "" ||
-		record.Email == "" ||
-		record.Phone == "" ||
-		record.Address == "" ||
-		record.EmergencyContact == "" ||
-		record.Department == "" ||
-		record.JobTitle == "" ||
-		record.EmploymentStatus == "" ||
-		record.SalaryBand == ""
-}
-
-func hasTooLongAdminFields(record storage.EmployeeRecord) bool {
-	return len(record.FirstName) > 50 ||
-		len(record.LastName) > 50 ||
-		len(record.Email) > 120 ||
-		len(record.Phone) > 20 ||
-		len(record.Address) > 150 ||
-		len(record.EmergencyContact) > 120 ||
-		len(record.JobTitle) > 60 ||
-		len(record.AccessibilityNotes) > 500 ||
-		len(record.PrivateHRNotes) > 1000
-}
-
-func isAllowedDepartment(department string) bool {
-	switch department {
-	case "Sales", "Stockroom", "Management", "HR", "Operations":
-		return true
-	default:
-		return false
-	}
-}
-
-func isAllowedEmploymentStatus(status string) bool {
-	switch status {
-	case "active", "on_leave", "terminated":
-		return true
-	default:
-		return false
-	}
-}
-
-func isAllowedSalaryBand(band string) bool {
-	switch band {
-	case "A", "B", "C", "D", "E":
-		return true
-	default:
-		return false
-	}
 }
