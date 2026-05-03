@@ -22,6 +22,7 @@
     <hr>
 
     <form method="POST" action="/admin/records/update">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="id" value="{{.Record.ID}}">
 
         <h2>Personal Details</h2>

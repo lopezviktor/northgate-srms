@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"northgate-srms/internal/auth"
+	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/handlers"
 	"northgate-srms/internal/storage"
 )
@@ -25,10 +26,11 @@ func main() {
 	}
 
 	sessionManager := auth.NewSessionManager()
-	authHandler := handlers.NewAuthHandler(db, sessionManager)
-	homeHandler := handlers.NewHomeHandler(sessionManager)
-	recordHandler := handlers.NewRecordHandler(db, sessionManager)
-	adminHandler := handlers.NewAdminHandler(db, sessionManager)
+	csrfManager := csrf.NewManager()
+	authHandler := handlers.NewAuthHandler(db, sessionManager, csrfManager)
+	homeHandler := handlers.NewHomeHandler(sessionManager, csrfManager)
+	recordHandler := handlers.NewRecordHandler(db, sessionManager, csrfManager)
+	adminHandler := handlers.NewAdminHandler(db, sessionManager, csrfManager)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", homeHandler.Home)

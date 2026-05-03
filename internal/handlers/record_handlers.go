@@ -5,12 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"northgate-srms/internal/auth"
+	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/storage"
 )
 
 type RecordHandler struct {
 	DB       *sql.DB
 	Sessions *auth.SessionManager
+	CSRF     *csrf.Manager
 }
 
 type RecordPageData struct {
@@ -20,16 +22,18 @@ type RecordPageData struct {
 }
 
 type RecordEditPageData struct {
-	Username string
-	Role     string
-	Record   storage.EmployeeRecord
-	Error    string
+	Username  string
+	Role      string
+	Record    storage.EmployeeRecord
+	Error     string
+	CSRFToken string
 }
 
-func NewRecordHandler(db *sql.DB, sessions *auth.SessionManager) *RecordHandler {
+func NewRecordHandler(db *sql.DB, sessions *auth.SessionManager, csrfManager *csrf.Manager) *RecordHandler {
 	return &RecordHandler{
 		DB:       db,
 		Sessions: sessions,
+		CSRF:     csrfManager,
 	}
 }
 
@@ -77,11 +81,17 @@ func (h *RecordHandler) EditOwnRecord(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	data := RecordEditPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Record:   record,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Record:    record,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "record_edit.html", data)
@@ -91,6 +101,10 @@ func (h *RecordHandler) UpdateOwnRecord(w http.ResponseWriter, r *http.Request) 
 	session, ok := h.Sessions.Get(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if !h.CSRF.Validate(r, session.ID) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
 
@@ -122,11 +136,18 @@ func (h *RecordHandler) renderEditFormWithError(w http.ResponseWriter, session a
 		return
 	}
 
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	data := RecordEditPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Record:   record,
-		Error:    message,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Record:    record,
+		Error:     message,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "record_edit.html", data)

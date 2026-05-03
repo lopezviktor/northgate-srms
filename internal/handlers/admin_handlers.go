@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"northgate-srms/internal/auth"
+	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/storage"
 	"strconv"
 )
@@ -12,6 +13,7 @@ import (
 type AdminHandler struct {
 	DB       *sql.DB
 	Sessions *auth.SessionManager
+	CSRF     *csrf.Manager
 }
 
 type AdminRecordsPageData struct {
@@ -27,16 +29,18 @@ type AdminRecordViewPageData struct {
 }
 
 type AdminRecordEditPageData struct {
-	Username string
-	Role     string
-	Record   storage.EmployeeRecord
-	Error    string
+	Username  string
+	Role      string
+	Record    storage.EmployeeRecord
+	Error     string
+	CSRFToken string
 }
 
-func NewAdminHandler(db *sql.DB, sessions *auth.SessionManager) *AdminHandler {
+func NewAdminHandler(db *sql.DB, sessions *auth.SessionManager, csrfManager *csrf.Manager) *AdminHandler {
 	return &AdminHandler{
 		DB:       db,
 		Sessions: sessions,
+		CSRF:     csrfManager,
 	}
 }
 
@@ -143,10 +147,17 @@ func (h *AdminHandler) EditRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+
+	}
 	data := AdminRecordEditPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Record:   record,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Record:    record,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "admin_record_edit.html", data)
@@ -155,6 +166,10 @@ func (h *AdminHandler) EditRecord(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) UpdateRecord(w http.ResponseWriter, r *http.Request) {
 	session, ok := h.requireAdmin(w, r)
 	if !ok {
+		return
+	}
+	if !h.CSRF.Validate(r, session.ID) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
 
@@ -219,11 +234,18 @@ func (h *AdminHandler) UpdateRecord(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) renderAdminEditFormWithError(w http.ResponseWriter, session auth.Session, record storage.EmployeeRecord, message string) {
+	token, err := h.CSRF.Generate(session.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	data := AdminRecordEditPageData{
-		Username: session.User.Username,
-		Role:     session.User.Role,
-		Record:   record,
-		Error:    message,
+		Username:  session.User.Username,
+		Role:      session.User.Role,
+		Record:    record,
+		Error:     message,
+		CSRFToken: token,
 	}
 
 	RenderTemplate(w, "admin_record_edit.html", data)
