@@ -7,6 +7,7 @@ import (
 	"northgate-srms/internal/auth"
 	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/handlers"
+	"northgate-srms/internal/security"
 	"northgate-srms/internal/storage"
 )
 
@@ -27,7 +28,8 @@ func main() {
 
 	sessionManager := auth.NewSessionManager()
 	csrfManager := csrf.NewManager()
-	authHandler := handlers.NewAuthHandler(db, sessionManager, csrfManager)
+	loginLimiter := security.NewLoginLimiter()
+	authHandler := handlers.NewAuthHandler(db, sessionManager, csrfManager, loginLimiter)
 	homeHandler := handlers.NewHomeHandler(sessionManager, csrfManager)
 	recordHandler := handlers.NewRecordHandler(db, sessionManager, csrfManager)
 	adminHandler := handlers.NewAdminHandler(db, sessionManager, csrfManager)

@@ -7,6 +7,7 @@ import (
 
 	"northgate-srms/internal/auth"
 	"northgate-srms/internal/csrf"
+	"northgate-srms/internal/security"
 )
 
 const loginCSRFCookieName = "northgate_login_csrf"
@@ -17,16 +18,18 @@ type LoginPageData struct {
 }
 
 type AuthHandler struct {
-	DB       *sql.DB
-	Sessions *auth.SessionManager
-	CSRF     *csrf.Manager
+	DB           *sql.DB
+	Sessions     *auth.SessionManager
+	CSRF         *csrf.Manager
+	LoginLimiter *security.LoginLimiter
 }
 
-func NewAuthHandler(db *sql.DB, sessions *auth.SessionManager, csrfManager *csrf.Manager) *AuthHandler {
+func NewAuthHandler(db *sql.DB, sessions *auth.SessionManager, csrfManager *csrf.Manager, loginLimiter *security.LoginLimiter) *AuthHandler {
 	return &AuthHandler{
-		DB:       db,
-		Sessions: sessions,
-		CSRF:     csrfManager,
+		DB:           db,
+		Sessions:     sessions,
+		CSRF:         csrfManager,
+		LoginLimiter: loginLimiter,
 	}
 }
 
@@ -75,11 +78,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := auth.AuthenticateUser(h.DB, username, password)
-	if err != nil {
+	if h.LoginLimiter.IsLocked(username) {
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
 	}
+
+	user, err := auth.AuthenticateUser(h.DB, username, password)
+	if err != nil {
+		h.LoginLimiter.RegisterFailure(username)
+		h.renderLoginWithError(w, "Invalid username or password.")
+		return
+	}
+
+	h.LoginLimiter.RegisterSuccess(username)
 
 	if err := h.Sessions.Create(w, user); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
