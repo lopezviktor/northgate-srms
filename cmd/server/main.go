@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"northgate-srms/internal/auth"
+	"northgate-srms/internal/config"
 	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/handlers"
 	"northgate-srms/internal/middleware"
@@ -13,7 +14,12 @@ import (
 )
 
 func main() {
-	db, err := storage.OpenDatabase("northgate.db")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("configuration failed: %v", err)
+	}
+
+	db, err := storage.OpenDatabase(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("database setup failed: %v", err)
 	}
@@ -30,6 +36,7 @@ func main() {
 	sessionManager := auth.NewSessionManager()
 	csrfManager := csrf.NewManager()
 	loginLimiter := security.NewLoginLimiter()
+
 	authHandler := handlers.NewAuthHandler(db, sessionManager, csrfManager, loginLimiter)
 	homeHandler := handlers.NewHomeHandler(sessionManager, csrfManager)
 	recordHandler := handlers.NewRecordHandler(db, sessionManager, csrfManager)
@@ -50,7 +57,7 @@ func main() {
 	mux.HandleFunc("GET /admin/records/edit", adminHandler.EditRecord)
 	mux.HandleFunc("POST /admin/records/update", adminHandler.UpdateRecord)
 
-	addr := ":8080"
+	addr := cfg.ServerAddress()
 
 	log.Printf("Starting server on http://localhost%s", addr)
 

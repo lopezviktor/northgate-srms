@@ -34,6 +34,7 @@ Security is critical because the system handles sensitive personal and administr
 - Audit fields:
   - last_updated_by
   - last_updated_at
+- Basic runtime configuration using environment variables with safe defaults
 - Two additional security features to be selected later
 
 ### Out of scope
@@ -571,7 +572,7 @@ The main assets that require protection are:
 | Audit fields | Support accountability and record integrity |
 | Admin functionality | Allows access to and modification of all records |
 | Application availability | Users and HR admins need reliable access to records |
-| System design and configuration | Weak configuration can expose data or weaken controls |
+| System design and runtime configuration | Weak or unvalidated configuration can expose data, weaken controls, or change application behaviour unexpectedly |
 
 The most sensitive record fields are:
 
@@ -595,9 +596,11 @@ The main trust boundaries are:
 | Go web server → SQLite database | SQL queries must not allow user input to change query structure |
 | Session cookie → server-side session store | A valid cookie must be checked against server-side session state |
 | Templates → browser | Stored or reflected data must not become executable HTML or JavaScript |
-| Configuration/startup environment → application | Configuration values must not enable unsafe behaviour |
+| Configuration/startup environment → application | Environment variables are external configuration input and must not enable unsafe behaviour |
 
 The server must treat all browser-supplied data as untrusted, including hidden fields, URL parameters, cookies, and form inputs.
+
+Runtime configuration supplied through environment variables should also be treated carefully. Values such as ports, database paths, debug settings, or deployment-specific options can change application behaviour and should use safe defaults, basic validation, and restricted access in real deployments.
 
 ### 6.3 Main risks and mitigations
 
@@ -614,7 +617,7 @@ The server must treat all browser-supplied data as untrusted, including hidden f
 | Malformed or oversized input | User submits unexpected, very long, or invalid data | Validation bypass, crashes, inconsistent records, or stored malicious content | Server-side validation for length, format, and whitelist fields before database updates |
 | Missing auditability | Records are changed without knowing who changed them | Loss of accountability and weaker integrity | Automatically update `last_updated_by` and `last_updated_at` on every record update |
 | Information leakage through errors | Detailed database or server errors are shown to users | Attackers learn internal details | Generic user-facing error messages; detailed errors kept out of templates and not exposed to users |
-| Security misconfiguration | Debug mode, unsafe defaults, or exposed files are left enabled | Internal information or sensitive data could be exposed | Avoid debug output in user responses; keep database and `.env` files out of version control; use safe defaults |
+| Security misconfiguration | Debug mode, unsafe defaults, exposed files, or unsafe runtime configuration are left enabled | Internal information or sensitive data could be exposed, or the system could behave insecurely | Avoid debug output in user responses; keep database and `.env` files out of version control; validate environment configuration; use safe defaults |
 | Logging sensitive data | Passwords, session IDs, CSRF tokens, or HR notes are logged | Logs become a secondary data breach source | Do not log secrets or sensitive HR field values; log only necessary security events if logging is implemented |
 | Dependency or supply chain weakness | Third-party packages contain vulnerabilities or are misused | Compromise through external code | Keep dependencies minimal; use standard library where possible; use well-known packages only when needed |
 | Poor error handling or inconsistent code | Missing checks or ignored errors cause unsafe behaviour | Security controls may fail silently | Handle errors explicitly; use small focused functions; test negative cases |
@@ -663,6 +666,7 @@ The risk model leads to the following design principles:
 - Store password hashes only, never plaintext passwords.
 - Update audit fields automatically.
 - Keep the project scope small enough for controls to be applied consistently.
+- Use environment variables only for limited runtime configuration, with safe defaults and no secrets committed to version control.
 
 ---
 
@@ -1171,8 +1175,9 @@ The implementation should follow this order:
 9. CSRF protection
 10. Input validation
 11. Additional security features
-12. Testing and evidence collection
-13. README and final report preparation
+12. Security headers and runtime configuration hardening
+13. Testing and evidence collection
+14. README and final report preparation
 
 ### 9.1 Phase 1: Project structure
 
@@ -1542,7 +1547,39 @@ Backup feature if needed:
 Security event logging
 ```
 
-### 9.12 Phase 12: Testing and evidence collection
+### 9.12 Phase 12: Security headers and runtime configuration hardening
+
+Add defence-in-depth headers and basic runtime configuration through environment variables.
+
+Security headers:
+
+- `Content-Security-Policy`
+- `X-Content-Type-Options`
+- `X-Frame-Options`
+- `Referrer-Policy`
+
+Runtime configuration:
+
+| Variable | Purpose | Default | Security consideration |
+|---|---|---|---|
+| `PORT` | HTTP server port | `8080` | Should be validated and not default to privileged or unexpected ports |
+| `DB_PATH` | SQLite database path | `northgate.db` | Should not point to sensitive system locations or be committed with real data |
+
+Expected outcome:
+
+```text
+The application can be configured without changing source code while still using safe defaults.
+```
+
+Security focus:
+
+- avoid hardcoding deployment-specific values where simple configuration is appropriate;
+- treat environment variables as external input rather than blindly trusted values;
+- avoid storing secrets, passwords, session IDs, CSRF tokens, or HR data in source code or logs;
+- keep local database files and `.env` files out of version control;
+- recognise that production deployment would require stricter configuration, HTTPS, protected secrets, and environment separation.
+
+### 9.13 Phase 13: Testing and evidence collection
 
 Run and record tests from the testing plan.
 
@@ -1573,7 +1610,7 @@ Evidence may include:
 - short testing notes;
 - optional Go test output.
 
-### 9.13 Phase 13: README and final report preparation
+### 9.14 Phase 14: README and final report preparation
 
 Prepare submission documentation.
 
@@ -1603,7 +1640,7 @@ Expected outcome:
 The project is ready for assessment submission with code, README, testing evidence, and report.
 ```
 
-### 9.14 Implementation discipline
+### 9.15 Implementation discipline
 
 During implementation:
 
@@ -1629,6 +1666,8 @@ Add CSRF protection
 Add input validation
 Add login rate limiting
 Add session timeout
+Add security headers
+Add runtime configuration
 Add testing evidence and README
 ```
 

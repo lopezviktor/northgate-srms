@@ -38,7 +38,33 @@ Then open:
 http://localhost:8080
 ```
 
+
 The application creates the SQLite database and demo data automatically if they do not already exist.
+
+---
+
+## Runtime configuration
+
+The application can be configured using environment variables. If no variables are provided, safe local defaults are used.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `8080` | HTTP server port |
+| `DB_PATH` | `northgate.db` | SQLite database path |
+
+Example:
+
+```bash
+PORT=9090 DB_PATH=test_northgate.db go run ./cmd/server
+```
+
+This starts the application on:
+
+```text
+http://localhost:9090
+```
+
+Environment variables are treated as runtime configuration input. The application validates the port and database path before starting. Sensitive values such as passwords, session identifiers, CSRF tokens, or real HR data should not be stored in source code, committed to version control, or logged.
 
 ---
 
@@ -280,6 +306,15 @@ The application adds defensive HTTP security headers:
 
 These provide defence in depth and reduce the impact of browser-based attacks.
 
+### Runtime configuration hardening
+
+Basic runtime configuration is read from environment variables with safe defaults:
+
+- `PORT`
+- `DB_PATH`
+
+These values are validated before the application starts. This avoids hardcoding deployment-specific values while still preventing obviously unsafe configuration such as invalid ports or database paths pointing to sensitive system locations.
+
 ---
 
 ## Testing
@@ -301,7 +336,8 @@ The system was tested manually and with Go unit tests.
 - login rate limiting;
 - session timeout;
 - password hash inspection;
-- security header inspection.
+- security header inspection;
+- runtime configuration using `PORT` and `DB_PATH` environment variables.
 
 ### Unit tests
 
@@ -327,8 +363,10 @@ Known limitations:
 - no multi-factor authentication;
 - no file uploads;
 - no cloud deployment;
+- runtime configuration is basic and limited to local development needs;
 - sessions are stored in memory, so they are lost when the server restarts;
 - the SQLite database is local to the application;
 - the UI is intentionally simple and not production-styled.
 
-In a production system, future improvements could include persistent session storage, HTTPS deployment with `Secure` cookies, stronger account lifecycle management, password reset, MFA, structured security logging, and more detailed audit history.
+In a production system, future improvements could include persistent session storage, HTTPS deployment with `Secure` cookies, stronger account lifecycle management, password reset, MFA, structured security logging, protected secrets management, separate development and production environments, and more detailed audit history.
+
