@@ -1,4 +1,13 @@
-# Northgate Stores – Secure HR Records System
+# Northgate Stores — Secure HR Records System
+
+![Go](https://img.shields.io/badge/Go-1.26.1-00ADD8?style=flat-square&logo=go&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=flat-square&logo=sqlite&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Implemented-success?style=flat-square)
+![Module](https://img.shields.io/badge/Module-COM6019M-blue?style=flat-square)
+
+> **Document status:** This is the full design document for the Northgate SRMS, covering data model, access control, threat model, route design, testing plan, and implementation roadmap. All phases described in Section 9 have been implemented. Deviations and improvements made during implementation are documented in [Section 10](#10-implementation-notes).
+
+---
 
 ## 1. Project Definition
 
@@ -35,8 +44,9 @@ Security is critical because the system handles sensitive personal and administr
   - last_updated_by
   - last_updated_at
 - Basic runtime configuration using environment variables with safe defaults
-- Two additional security features to be selected later
-
+- Two additional security features:
+  - login rate limiting / temporary lockout
+  - session timeout after inactivity
 ### Out of scope
 
 - Public registration
@@ -467,7 +477,6 @@ State-changing actions must use `POST` and require CSRF protection. `GET` routes
 | Method | Route | Purpose | Access | CSRF required | Notes |
 |---|---|---|---|---|---|
 | GET | `/` | Entry point | Public/Auth-aware | No | Redirects to `/login`, `/record`, or `/admin/records` depending on session/role |
-| GET | `/health` | Basic development health check | Public or local only | No | Optional; should not expose sensitive information |
 
 ### 5.5 Route security rules
 
@@ -924,18 +933,19 @@ Alternative strong choice:
 
 This alternative would be especially strong if the report focuses more heavily on accountability and incident investigation.
 
-### 7.9 Current decision
+### 7.9 Implemented features
 
-The current preferred choice is:
+Both shortlisted features were implemented as planned:
 
 ```text
-Additional Feature 1: Login rate limiting / temporary lockout
-Additional Feature 2: Session timeout after inactivity
+Additional Feature 1: Login rate limiting / temporary lockout  ✓ Implemented
+Additional Feature 2: Session timeout after inactivity         ✓ Implemented
 ```
 
-Security event logging remains the strongest backup option if session timeout becomes unnecessarily complex during implementation.
+Additionally, the following defence-in-depth controls were implemented beyond the two required features:
 
-CSP may still be implemented as a simple defensive header, but it should not be relied on as one of the two main additional features unless one of the preferred features is dropped.
+- **Security headers middleware** — CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` applied to all responses via a dedicated middleware layer.
+- **Runtime configuration hardening** — `PORT` and `DB_PATH` configurable via environment variables, validated on startup with safe defaults and path traversal prevention.
 
 ---
 
@@ -1620,7 +1630,6 @@ README should include:
 - how to run the application;
 - demo login credentials;
 - security features implemented;
-- AI use statement;
 - known limitations.
 
 Final report should use the design work from this document, especially:
@@ -1654,20 +1663,52 @@ During implementation:
 Suggested commit sequence:
 
 ```text
-Add project structure
-Add database schema and seed data
-Add basic HTTP server and templates
-Add authentication and sessions
-Add employee record view
-Add employee record update
-Add admin record views
-Add admin record update
-Add CSRF protection
-Add input validation
-Add login rate limiting
-Add session timeout
-Add security headers
-Add runtime configuration
-Add testing evidence and README
+Add project structure             ✓
+Add database schema and seed data ✓
+Add basic HTTP server and templates ✓
+Add authentication and sessions   ✓
+Add employee record view          ✓
+Add employee record update        ✓
+Add admin record views            ✓
+Add admin record update           ✓
+Add CSRF protection               ✓
+Add input validation              ✓
+Add login rate limiting           ✓
+Add session timeout               ✓
+Add security headers              ✓
+Add runtime configuration         ✓
+Add testing evidence and README   ✓
 ```
 
+---
+
+## 10. Implementation Notes
+
+This section documents decisions made or refined during implementation that deviate from or improve upon the original design.
+
+### 10.1 CSRF protection for the login form
+
+The original design used a single fixed key (`"login"`) in the CSRF token store for the login pre-session. This introduced a race condition: if two users loaded the login page concurrently, the second request would overwrite the first user's token in the shared map, causing the first user's subsequent login submission to be rejected with a CSRF error.
+
+**Resolution:** A unique `preSessionID` is now generated per login page visit using `crypto/rand`. This ID is used as both the CSRF map key and the value stored in the `northgate_login_csrf` cookie. Each user visiting the login page receives their own independent token, eliminating the race condition entirely.
+
+The `preSessionID` is explicitly deleted from the CSRF token store once it has been read from the cookie, including validation failure, authentication failure, locked account, and successful login paths. — to prevent orphaned entries accumulating in the store.
+
+```
+GET /login  → generatePreSessionID() → token stored at key=preSessionID, cookie value=preSessionID
+POST /login → read cookie → validate token at key=cookie.Value → delete key=preSessionID
+```
+
+### 10.2 Username validation in the login handler
+
+The original design specified that `validation.IsValidUsername` would be used to validate the submitted username during login. The initial implementation used manual length checks only. This was corrected so that the login handler now calls `validation.IsValidUsername`, which enforces both length bounds (3–30 characters) and character whitelist (letters, digits, dots, hyphens, underscores).
+
+This does not affect the generic error message returned to the user — invalid usernames and wrong passwords produce the same response.
+
+### 10.3 Audit field display
+
+The `last_updated_by` field is stored as an integer foreign key referencing `users.id`. The original design did not specify how this should be rendered. During implementation, a `GetUsernameByID` lookup was added to the admin record view handler so that the username is displayed rather than the numeric ID, which is more meaningful for accountability purposes.
+
+### 10.4 Login CSRF cookie expiry on success
+
+On successful login, the `northgate_login_csrf` cookie is explicitly expired in the browser response in addition to the token being deleted from the server-side CSRF store. This ensures the client does not retain a stale cookie that no longer corresponds to any server-side token.
