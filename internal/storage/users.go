@@ -44,3 +44,17 @@ func GetUserByUsername(db *sql.DB, username string) (UserWithPasswordHash, error
 }
 
 var ErrUserNotFound = errors.New("user not found")
+
+func GetUsernameByID(db *sql.DB, userID int64) (string, error) {
+	var username string
+
+	err := db.QueryRow(
+		`SELECT username FROM users WHERE id = ?`,
+		userID,
+	).Scan(&username)
+	if err != nil {
+		return "", fmt.Errorf("get username by id: %w", err)
+	}
+
+	return username, nil
+}

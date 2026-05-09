@@ -26,10 +26,11 @@ type AdminRecordsPageData struct {
 }
 
 type AdminRecordViewPageData struct {
-	Username  string
-	Role      string
-	Record    storage.EmployeeRecord
-	CSRFToken string
+	Username              string
+	Role                  string
+	Record                storage.EmployeeRecord
+	LastUpdatedByUsername string
+	CSRFToken             string
 }
 
 type AdminRecordEditPageData struct {
@@ -81,6 +82,7 @@ func (h *AdminHandler) ViewRecord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	token, err := h.CSRF.Generate(session.ID)
 	if err != nil {
 
@@ -105,11 +107,17 @@ func (h *AdminHandler) ViewRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	updatedByUsername, err := storage.GetUsernameByID(h.DB, record.LastUpdatedBy)
+	if err != nil {
+		updatedByUsername = "unknown"
+	}
+
 	data := AdminRecordViewPageData{
-		Username:  session.User.Username,
-		Role:      session.User.Role,
-		Record:    record,
-		CSRFToken: token,
+		Username:              session.User.Username,
+		Role:                  session.User.Role,
+		Record:                record,
+		LastUpdatedByUsername: updatedByUsername,
+		CSRFToken:             token,
 	}
 
 	RenderTemplate(w, "admin_record_view.html", data)
