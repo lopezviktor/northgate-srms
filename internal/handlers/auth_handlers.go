@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
 	"northgate-srms/internal/auth"
 	"northgate-srms/internal/csrf"
 	"northgate-srms/internal/security"
+	"northgate-srms/internal/validation"
 )
 
 const loginCSRFCookieName = "northgate_login_csrf"
@@ -60,25 +63,31 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.validateLoginCSRFToken(r) {
+	loginCSRFCookie, err := r.Cookie(loginCSRFCookieName)
+	if err != nil || !h.CSRF.Validate(r, loginCSRFCookie.Value) {
 		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
+
+	preSessionID := loginCSRFCookie.Value
 
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 
 	if username == "" || password == "" {
+		h.CSRF.Delete(preSessionID)
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
 	}
 
-	if len(username) > 30 || len(password) > 200 {
+	if !validation.IsValidUsername(username) || len(password) > 200 {
+		h.CSRF.Delete(preSessionID)
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
 	}
 
 	if h.LoginLimiter.IsLocked(username) {
+		h.CSRF.Delete(preSessionID)
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
 	}
@@ -86,11 +95,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	user, err := auth.AuthenticateUser(h.DB, username, password)
 	if err != nil {
 		h.LoginLimiter.RegisterFailure(username)
+		h.CSRF.Delete(preSessionID)
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
 	}
 
 	h.LoginLimiter.RegisterSuccess(username)
+	h.CSRF.Delete(preSessionID)
+	expireLoginCSRFCookie(w)
 
 	if err := h.Sessions.Create(w, user); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -123,14 +135,19 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) createLoginCSRFToken(w http.ResponseWriter) (string, error) {
-	token, err := h.CSRF.Generate("login")
+	preSessionID, err := generatePreSessionID()
+	if err != nil {
+		return "", err
+	}
+
+	token, err := h.CSRF.Generate(preSessionID)
 	if err != nil {
 		return "", err
 	}
 
 	cookie := &http.Cookie{
 		Name:     loginCSRFCookieName,
-		Value:    "login",
+		Value:    preSessionID,
 		Path:     "/login",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -140,15 +157,6 @@ func (h *AuthHandler) createLoginCSRFToken(w http.ResponseWriter) (string, error
 	http.SetCookie(w, cookie)
 
 	return token, nil
-}
-
-func (h *AuthHandler) validateLoginCSRFToken(r *http.Request) bool {
-	cookie, err := r.Cookie(loginCSRFCookieName)
-	if err != nil {
-		return false
-	}
-
-	return h.CSRF.Validate(r, cookie.Value)
 }
 
 func (h *AuthHandler) renderLoginWithError(w http.ResponseWriter, message string) {
@@ -164,6 +172,29 @@ func (h *AuthHandler) renderLoginWithError(w http.ResponseWriter, message string
 	})
 }
 
+func expireLoginCSRFCookie(w http.ResponseWriter) {
+	cookie := &http.Cookie{
+		Name:     loginCSRFCookieName,
+		Value:    "",
+		Path:     "/login",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	}
+
+	http.SetCookie(w, cookie)
+}
+
 func (h *AuthHandler) validateSessionCSRFToken(r *http.Request, sessionID string) bool {
 	return h.CSRF.Validate(r, sessionID)
+}
+
+func generatePreSessionID() (string, error) {
+	bytes := make([]byte, 16)
+
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(bytes), nil
 }
