@@ -33,7 +33,7 @@ func main() {
 		log.Fatalf("seed data failed: %v", err)
 	}
 
-	sessionManager := auth.NewSessionManager()
+	sessionManager := auth.NewSessionManager(db)
 	csrfManager := csrf.NewManager()
 	loginLimiter := security.NewLoginLimiter()
 

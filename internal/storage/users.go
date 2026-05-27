@@ -43,6 +43,35 @@ func GetUserByUsername(db *sql.DB, username string) (UserWithPasswordHash, error
 	return user, nil
 }
 
+func GetUserByID(db *sql.DB, userID int64) (UserWithPasswordHash, error) {
+	var user UserWithPasswordHash
+	var isActive int
+
+	err := db.QueryRow(
+		`SELECT id, username, password_hash, role, is_active
+		 FROM users
+		 WHERE id = ?`,
+		userID,
+	).Scan(
+		&user.ID,
+		&user.Username,
+		&user.PasswordHash,
+		&user.Role,
+		&isActive,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return UserWithPasswordHash{}, ErrUserNotFound
+		}
+
+		return UserWithPasswordHash{}, fmt.Errorf("get user by id: %w", err)
+	}
+
+	user.IsActive = isActive == 1
+
+	return user, nil
+}
+
 var ErrUserNotFound = errors.New("user not found")
 
 func GetUsernameByID(db *sql.DB, userID int64) (string, error) {

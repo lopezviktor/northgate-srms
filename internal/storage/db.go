@@ -30,6 +30,7 @@ func CreateSchema(db *sql.DB) error {
 	queries := []string{
 		createUsersTable,
 		createEmployeeRecordsTable,
+		createSessionsTable,
 	}
 
 	for _, query := range queries {
@@ -81,5 +82,18 @@ CREATE TABLE IF NOT EXISTS employee_records (
 
 	FOREIGN KEY (user_id) REFERENCES users(id),
 	FOREIGN KEY (last_updated_by) REFERENCES users(id)
+);
+`
+
+const createSessionsTable = `
+CREATE TABLE IF NOT EXISTS sessions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	session_hash TEXT NOT NULL UNIQUE,
+	user_id INTEGER NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	expires_at TEXT NOT NULL,
+	last_activity_at TEXT NOT NULL,
+
+	FOREIGN KEY (user_id) REFERENCES users(id)
 );
 `
