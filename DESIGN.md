@@ -37,6 +37,7 @@ Security is critical because the system handles sensitive personal and administr
 - Server-side access control
 - CSRF protection for state-changing actions
 - Secure session cookies
+- Database-backed server-side sessions with hashed session identifiers
 - Prepared SQL statements
 - Safe output rendering with Go html/template
 - Input validation
@@ -47,6 +48,7 @@ Security is critical because the system handles sensitive personal and administr
 - Two additional security features:
   - login rate limiting / temporary lockout
   - session timeout after inactivity
+
 ### Out of scope
 
 - Public registration
@@ -65,10 +67,11 @@ Security is critical because the system handles sensitive personal and administr
 
 ## 3. Data Model
 
-The system uses two core database tables:
+The system uses three core database tables:
 
 - `users`
 - `employee_records`
+- `sessions`
 
 The `users` table stores authentication and role information. The `employee_records` table stores the sensitive HR record linked to each user. This separation keeps login credentials and HR data in different parts of the data model, making the design easier to reason about and safer to maintain.
 
@@ -79,6 +82,8 @@ users.id  →  employee_records.user_id
 ```
 
 Each user has one employee record, and each employee record belongs to one user.
+
+Authenticated sessions are also stored server-side in SQLite. The browser stores only an unpredictable session identifier in a cookie, while the database stores a SHA-256 hash of that identifier. This keeps authentication state persistent across server restarts without storing reusable raw session tokens in the database.
 
 ### 3.1 `users` table
 
@@ -161,7 +166,35 @@ CREATE TABLE IF NOT EXISTS employee_records (
 | `last_updated_by` | INTEGER | NOT NULL, FOREIGN KEY | Audit | No | No | Yes |
 | `last_updated_at` | TEXT | DEFAULT CURRENT_TIMESTAMP | Audit | No | No | Yes |
 
-### 3.3 Field editability rules
+### 3.3 `sessions` table
+
+Purpose: stores server-side authentication sessions in SQLite.
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_hash TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT NOT NULL,
+    last_activity_at TEXT NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+| Column | Type | Constraint | Purpose |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Internal session row identifier |
+| `session_hash` | TEXT | NOT NULL, UNIQUE | SHA-256 hash of the random session ID stored in the browser cookie |
+| `user_id` | INTEGER | NOT NULL, FOREIGN KEY | Links the session to the authenticated user |
+| `created_at` | TEXT | DEFAULT CURRENT_TIMESTAMP | Records when the session was created |
+| `expires_at` | TEXT | NOT NULL | Absolute session expiry time |
+| `last_activity_at` | TEXT | NOT NULL | Used to enforce inactivity timeout |
+
+The raw session ID is never stored in the database. On each authenticated request, the server reads the session cookie, hashes the submitted session ID, and looks up the resulting hash in the `sessions` table. This reduces the impact of a database leak because the stored value cannot be directly reused as a valid session cookie.
+
+### 3.4 Field editability rules
 
 Employees can update only low-risk fields:
 
@@ -203,7 +236,7 @@ No user, including administrators, should directly edit technical identifiers or
 
 These fields are controlled by the system.
 
-### 3.4 Automatic audit behaviour
+### 3.5 Automatic audit behaviour
 
 Whenever an employee record is updated, the system must automatically update:
 
@@ -216,7 +249,7 @@ Whenever an employee record is updated, the system must automatically update:
 
 This supports accountability and allows administrators to see who last changed a record and when.
 
-### 3.5 Data validation rules
+### 3.6 Data validation rules
 
 Input validation will be applied server-side before data is stored.
 
@@ -244,7 +277,7 @@ Approved departments:
 - `HR`
 - `Operations`
 
-### 3.6 Example seed users
+### 3.7 Example seed users
 
 The system will include test accounts for assessment purposes.
 
@@ -489,6 +522,8 @@ State-changing actions must use `POST` and require CSRF protection. `GET` routes
 - compare the submitted password with the stored password hash;
 - reject inactive users;
 - create a new unpredictable session ID after successful login;
+- store only a SHA-256 hash of the session ID in the SQLite `sessions` table;
+- associate the stored session with the authenticated `user_id`;
 - set the session cookie using secure attributes such as `HttpOnly` and `SameSite`;
 - return a generic error message for failed login attempts.
 
@@ -497,7 +532,7 @@ State-changing actions must use `POST` and require CSRF protection. `GET` routes
 `POST /logout` must:
 
 - require a valid CSRF token;
-- invalidate the server-side session;
+- delete the server-side session row from SQLite;
 - expire the session cookie in the browser;
 - redirect the user to the login page.
 
@@ -577,7 +612,7 @@ The main assets that require protection are:
 |---|---|
 | Employee HR records | Contain personal, employment, accessibility, emergency contact, and HR notes |
 | Password hashes | Could be targeted in a database breach |
-| Session identifiers | Allow authenticated access while a user is logged in |
+| Session identifiers | Allow authenticated access while a user is logged in; raw values must not be stored server-side |
 | Audit fields | Support accountability and record integrity |
 | Admin functionality | Allows access to and modification of all records |
 | Application availability | Users and HR admins need reliable access to records |
@@ -620,7 +655,7 @@ Runtime configuration supplied through environment variables should also be trea
 | SQL Injection | Malicious input is inserted into SQL queries | Login bypass, data exposure, or data modification | Prepared statements for all database queries; no string concatenation for SQL |
 | Cross-Site Scripting (XSS) | HR notes or other stored fields contain HTML/JavaScript payloads | Browser executes attacker-controlled code, possibly exposing data or performing actions as the user | Render all pages through Go `html/template`; avoid unsafe template output; validate input length and format |
 | Cross-Site Request Forgery (CSRF) | A malicious site tricks a logged-in user into submitting a state-changing request | Unwanted record updates or logout actions | CSRF token required on all state-changing `POST` routes; no state-changing `GET` requests; SameSite session cookies |
-| Session hijacking or session misuse | A session cookie is stolen, guessed, or reused | Attacker acts as the logged-in user | Random session IDs; server-side sessions; HttpOnly and SameSite cookie flags; logout invalidates session |
+| Session hijacking or session misuse | A session cookie is stolen, guessed, reused, or remains valid longer than necessary | Attacker acts as the logged-in user | Random session IDs; HttpOnly and SameSite cookie flags; SQLite-backed server-side sessions; hashed session identifiers in the database; absolute expiry; inactivity timeout; logout deletes the server-side session row |
 | Weak password storage | Passwords stored in plaintext or weak hashes | Breach exposes real credentials | Store only password hashes using bcrypt; never log passwords |
 | Brute-force login attempts | Attacker repeatedly guesses usernames and passwords | Account compromise | Candidate additional feature: login rate limiting or temporary lockout |
 | Malformed or oversized input | User submits unexpected, very long, or invalid data | Validation bypass, crashes, inconsistent records, or stored malicious content | Server-side validation for length, format, and whitelist fields before database updates |
@@ -673,6 +708,7 @@ The risk model leads to the following design principles:
 - Use `POST` plus CSRF tokens for state-changing actions.
 - Render dynamic output through `html/template`.
 - Store password hashes only, never plaintext passwords.
+- Store only hashed session identifiers in the database, never raw reusable session tokens.
 - Update audit fields automatically.
 - Keep the project scope small enough for controls to be applied consistently.
 - Use environment variables only for limited runtime configuration, with safe defaults and no secrets committed to version control.
@@ -784,10 +820,12 @@ Security benefit:
 
 Implementation approach:
 
-- store `last_activity` in the server-side session;
-- update `last_activity` after each valid authenticated request;
-- compare the current time with `last_activity` on protected routes;
-- invalidate the session if the inactivity limit has been exceeded.
+- store server-side sessions in the SQLite `sessions` table;
+- store only `session_hash`, not the raw session ID;
+- store `user_id`, `created_at`, `expires_at`, and `last_activity_at` for each session;
+- update `last_activity_at` after each valid authenticated request;
+- compare the current time with `expires_at` and `last_activity_at` on protected routes;
+- delete the session row if the absolute expiry or inactivity limit has been exceeded.
 
 Testing approach:
 
@@ -940,6 +978,7 @@ Both shortlisted features were implemented as planned:
 ```text
 Additional Feature 1: Login rate limiting / temporary lockout  ✓ Implemented
 Additional Feature 2: Session timeout after inactivity         ✓ Implemented
+Session storage upgrade: SQLite-backed hashed sessions         ✓ Implemented
 ```
 
 Additionally, the following defence-in-depth controls were implemented beyond the two required features:
@@ -1055,11 +1094,15 @@ All state-changing actions must use `POST` and require a valid CSRF token.
 
 | ID | Area tested | Test steps | Expected behaviour | Pass criteria |
 |---|---|---|---|---|
-| S1 | Session creation | Log in with valid credentials | Session cookie is created | User can access protected routes |
+| S1 | Session creation | Log in with valid credentials | Session cookie is created and a row appears in `sessions` | User can access protected routes |
 | S2 | Session cookie flags | Inspect session cookie in browser/dev tools | Cookie includes `HttpOnly` and `SameSite` | Required cookie attributes are present |
-| S3 | Session invalidation | Log out, then revisit `/record` | User is redirected to login | Old session no longer grants access |
-| S4 | Invalid session ID | Modify or delete session cookie | Access to protected routes is denied | Invalid session is not trusted |
-| S5 | Session identity source | Attempt to submit another user ID in a form | Server still uses session user ID | User cannot impersonate another account |
+| S3 | Hashed session storage | Compare browser cookie value with the `sessions.session_hash` value | Database stores a SHA-256 hash, not the raw cookie value | Raw session ID is not stored server-side |
+| S4 | Session linked to user ID | Inspect the `sessions` table after login | Session row contains the authenticated `user_id` | Session identity is resolved server-side |
+| S5 | Session invalidation | Log out, then inspect `sessions` and revisit `/record` | Session row is deleted and protected route requires login | Old session no longer grants access |
+| S6 | Invalid session ID | Modify or delete session cookie | Access to protected routes is denied | Invalid session is not trusted |
+| S7 | Session persistence after restart | Log in, restart the Go server without logging out, then refresh a protected page | Session remains valid because it is stored in SQLite | Session survives server restart |
+| S8 | Inactivity timeout | Log in, wait beyond the inactivity timeout, then refresh a protected page | Session is deleted/invalidated and user must log in again | Inactive sessions cannot access data |
+| S9 | Session identity source | Attempt to submit another user ID in a form | Server still uses session user ID | User cannot impersonate another account |
 
 If HTTPS is not used in the local development environment, the `Secure` cookie flag may be discussed as a production requirement rather than enforced locally.
 
@@ -1146,6 +1189,7 @@ Testing evidence may include:
 - screenshots showing denied access;
 - screenshots showing validation errors;
 - database screenshots or query output showing audit fields;
+- database query output showing hashed sessions, user IDs, expiry times, and logout deletion;
 - short notes explaining manual test results;
 - optional Go test output if unit tests are added.
 
@@ -1236,6 +1280,7 @@ Tasks:
 
 - create `users` table;
 - create `employee_records` table;
+- create `sessions` table for database-backed session storage;
 - add seed users:
   - `admin`
   - `alice`
@@ -1296,7 +1341,10 @@ Tasks:
 - retrieve user with prepared statement;
 - compare password using bcrypt;
 - create unpredictable session ID;
-- store session server-side;
+- store sessions server-side in SQLite;
+- store only a SHA-256 hash of the session ID in the database;
+- link each session to the authenticated `user_id`;
+- record session creation time, absolute expiry time, and last activity time;
 - set session cookie with secure attributes;
 - implement logout.
 
@@ -1320,6 +1368,8 @@ Security focus:
 - generic login failure messages;
 - `HttpOnly` and `SameSite` cookie attributes;
 - session invalidation on logout.
+- database-backed sessions that survive server restarts;
+- raw session tokens are not stored in the database.
 
 ### 9.5 Phase 5: Employee record view
 
@@ -1540,7 +1590,7 @@ Repeated failed login attempts trigger a temporary lockout.
 
 Tasks:
 
-- store `last_activity` in the session;
+- store `last_activity_at` in the SQLite `sessions` table;
 - check inactivity on protected routes;
 - invalidate expired sessions;
 - redirect expired users to login.
@@ -1667,6 +1717,7 @@ Add project structure             ✓
 Add database schema and seed data ✓
 Add basic HTTP server and templates ✓
 Add authentication and sessions   ✓
+Add database-backed sessions      ✓
 Add employee record view          ✓
 Add employee record update        ✓
 Add admin record views            ✓
@@ -1712,3 +1763,21 @@ The `last_updated_by` field is stored as an integer foreign key referencing `use
 ### 10.4 Login CSRF cookie expiry on success
 
 On successful login, the `northgate_login_csrf` cookie is explicitly expired in the browser response in addition to the token being deleted from the server-side CSRF store. This ensures the client does not retain a stale cookie that no longer corresponds to any server-side token.
+
+### 10.5 Database-backed hashed session storage
+
+The original session implementation stored sessions in an in-memory Go map. This worked for authentication, but it had two limitations: sessions were lost whenever the server restarted, and session state could not be inspected or expired through the database layer.
+
+**Resolution:** Sessions are now stored in a dedicated SQLite `sessions` table. The browser still receives a random session ID in the `northgate_session` cookie, but the database stores only `SHA-256(sessionID)` rather than the raw cookie value. Each session row is linked to `users.id` through `user_id` and includes `created_at`, `expires_at`, and `last_activity_at` timestamps.
+
+```text
+Browser cookie: raw random session ID
+Server lookup: SHA-256(cookie value)
+Database row: session_hash + user_id + created_at + expires_at + last_activity_at
+```
+
+This improves robustness because sessions survive server restarts and can be deleted during logout or expiry checks. It also reduces the impact of a database leak because the value stored in the database cannot be directly reused as a valid session cookie.
+
+The implementation also preserves the existing inactivity timeout. On each authenticated request, the session is looked up by hash, checked against both absolute expiry and inactivity timeout, and then `last_activity_at` is updated. Logout removes the corresponding row from SQLite and expires the browser cookie.
+
+This change was implemented instead of adding two-factor authentication because two-factor authentication was not required for the assessment once two additional security features had already been implemented. Database-backed hashed sessions were a more proportionate improvement for the current scope because they strengthened an existing core control without adding a new user-facing authentication flow.
