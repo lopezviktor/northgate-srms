@@ -20,7 +20,7 @@ The system models a fictional retail company — Northgate Stores — where HR a
 | Control | Details |
 |---|---|
 | Password hashing | bcrypt with `DefaultCost` — plaintext passwords never stored |
-| Session management | Server-side sessions, `crypto/rand` 256-bit session IDs |
+| Session management | SQLite-backed server-side sessions, `crypto/rand` 256-bit session IDs, SHA-256 session hashes stored in database |
 | Cookie security | `HttpOnly` + `SameSite=Lax` on all session cookies |
 | CSRF protection | Per-session tokens on all state-changing POSTs; unique pre-session ID per login visit |
 | SQL injection | Prepared statements with `?` placeholders throughout — no string concatenation |
@@ -28,7 +28,7 @@ The system models a fictional retail company — Northgate Stores — where HR a
 | Input validation | Centralised `internal/validation` package — whitelist, length, and format checks |
 | Broken access control | IDOR prevented by design — employee records loaded from `session.User.ID`, never from client input |
 | Login rate limiting | 5 failed attempts → 2-minute lockout per username |
-| Session inactivity timeout | Sessions expire after 15 minutes of inactivity |
+| Session inactivity timeout | Sessions expire after 15 minutes of inactivity and have a 1-hour absolute expiry |
 | Security headers | CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` |
 | Audit trail | `last_updated_by` and `last_updated_at` automatically updated on every record change |
 | Role-based access control | Server-side enforcement — employees cannot access admin routes regardless of URL |
@@ -101,7 +101,7 @@ northgate-srms/
 ├── internal/
 │   ├── auth/
 │   │   ├── auth.go               # bcrypt credential verification
-│   │   └── session.go            # Server-side session store with inactivity timeout
+│   │   └── session.go            # SQLite-backed hashed sessions with expiry and inactivity timeout
 │   ├── config/
 │   │   └── config.go             # Environment-based runtime config with validation
 │   ├── csrf/
@@ -163,10 +163,11 @@ Administrators cannot directly edit system-controlled fields: `id`, `user_id`, `
 
 ## Data model
 
-Two core tables with a one-to-one relationship:
+Three core tables are used:
 
-```
+```text
 users.id  →  employee_records.user_id
+users.id  →  sessions.user_id
 ```
 
 ### `users`
@@ -202,6 +203,21 @@ Stores sensitive HR data associated with each user.
 | `last_updated_by` | No — system controlled | No — system controlled |
 | `last_updated_at` | No — system controlled | No — system controlled |
 
+### `sessions`
+
+Stores server-side authentication sessions. The browser stores only the raw random session ID in the `northgate_session` cookie. SQLite stores only a SHA-256 hash of that value.
+
+| Field | Notes |
+|---|---|
+| `id` | Internal session row identifier |
+| `session_hash` | SHA-256 hash of the random session ID; the raw cookie value is not stored |
+| `user_id` | Foreign key linking the session to the authenticated user |
+| `created_at` | Session creation timestamp |
+| `expires_at` | Absolute session expiry timestamp |
+| `last_activity_at` | Updated after authenticated requests to enforce inactivity timeout |
+
+This improves robustness because sessions survive server restarts and can be removed on logout or expiry. It also reduces the impact of a database leak because the stored session value cannot be directly reused as a valid browser cookie.
+
 ---
 
 ## Running tests
@@ -214,17 +230,38 @@ go test ./...
 
 ---
 
+## Manual security checks
+
+The following manual checks were used to verify the session storage upgrade and related controls:
+
+| Check | Expected result |
+|---|---|
+| Valid login | Creates a `northgate_session` cookie and a row in the `sessions` table |
+| Session hash storage | `sessions.session_hash` contains a SHA-256 hash, not the raw cookie value |
+| User binding | `sessions.user_id` matches the authenticated user |
+| Logout | Deletes the matching session row and expires the browser cookie |
+| Server restart | Session remains valid after restarting the Go server, until expiry or inactivity timeout |
+| Inactivity timeout | Session becomes invalid after 15 minutes of inactivity |
+| Invalid cookie | Modified or deleted session cookie is rejected |
+
+Example SQLite inspection after login:
+
+```sql
+SELECT id, session_hash, user_id, created_at, expires_at, last_activity_at
+FROM sessions;
+```
+
+---
+
 ## Known limitations
 
 This is an assessment prototype intentionally scoped for clarity and focus on security controls.
 
 | Limitation | Notes |
 |---|---|
-| Sessions in memory | Lost on server restart; production would use persistent storage |
 | No HTTPS | `Secure` cookie flag disabled for `localhost`; required in any real deployment |
 | No security event logging | Failed logins, denied access, and CSRF rejections are not persisted |
 | Rate limiting by username only | IP-based limiting would be more robust against distributed attacks |
-| No MFA | Especially relevant for admin accounts |
+| No MFA | Especially relevant for admin accounts; not implemented because the assessment already includes two additional security features and database-backed hashed sessions were prioritised as a lower-risk session-management improvement |
 | No public registration | Users created via seed data only |
 | No password reset | Out of scope for this prototype |
-
