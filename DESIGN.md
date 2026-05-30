@@ -283,7 +283,8 @@ The system will include test accounts for assessment purposes.
 
 | Username | Role | Purpose |
 |---|---|---|
-| `admin` | admin | HR administrator account |
+| `admin` | admin | Primary HR administrator account |
+| `hrmanager` | admin | Second HR administrator account for assessment testing |
 | `alice` | employee | Normal employee account |
 | `bob` | employee | Normal employee account |
 
@@ -1023,7 +1024,8 @@ The following demo accounts will be used for testing.
 
 | Username | Role | Purpose |
 |---|---|---|
-| `admin` | admin | Tests HR administrator functionality |
+| `admin` | admin | Tests primary HR administrator functionality |
+| `hrmanager` | admin | Tests a second HR administrator account |
 | `alice` | employee | Tests normal employee access |
 | `bob` | employee | Tests access-control separation between employees |
 
@@ -1283,6 +1285,7 @@ Tasks:
 - create `sessions` table for database-backed session storage;
 - add seed users:
   - `admin`
+  - `hrmanager`
   - `alice`
   - `bob`
 - store only bcrypt password hashes;
@@ -1764,6 +1767,7 @@ The `last_updated_by` field is stored as an integer foreign key referencing `use
 
 On successful login, the `northgate_login_csrf` cookie is explicitly expired in the browser response in addition to the token being deleted from the server-side CSRF store. This ensures the client does not retain a stale cookie that no longer corresponds to any server-side token.
 
+
 ### 10.5 Database-backed hashed session storage
 
 The original session implementation stored sessions in an in-memory Go map. This worked for authentication, but it had two limitations: sessions were lost whenever the server restarted, and session state could not be inspected or expired through the database layer.
@@ -1781,3 +1785,7 @@ This improves robustness because sessions survive server restarts and can be del
 The implementation also preserves the existing inactivity timeout. On each authenticated request, the session is looked up by hash, checked against both absolute expiry and inactivity timeout, and then `last_activity_at` is updated. Logout removes the corresponding row from SQLite and expires the browser cookie.
 
 This change was implemented instead of adding two-factor authentication because two-factor authentication was not required for the assessment once two additional security features had already been implemented. Database-backed hashed sessions were a more proportionate improvement for the current scope because they strengthened an existing core control without adding a new user-facing authentication flow.
+
+### 10.6 Second administrator account added for assessment testing
+
+During review, the seed data was updated to include a second administrator account. The final demo accounts now include two HR administrators (`admin` and `hrmanager`) and two regular employee accounts (`alice` and `bob`). This ensures the application fully supports testing both administrator and regular-user behaviour with more than one account in each role.

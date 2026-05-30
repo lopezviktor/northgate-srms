@@ -86,6 +86,7 @@ The following accounts are available for testing. Passwords are shown here for a
 | Username | Password | Role |
 |---|---|---|
 | `admin` | `AdminPass123!` | HR Administrator |
+| `hrmanager` | `HRManager123!` | HR Administrator |
 | `alice` | `AlicePass123!` | Employee |
 | `bob` | `BobPass123!` | Employee |
 
