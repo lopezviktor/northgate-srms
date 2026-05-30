@@ -27,7 +27,7 @@ The system models a fictional retail company — Northgate Stores — where HR a
 | XSS prevention | Contextual output escaping via Go `html/template` |
 | Input validation | Centralised `internal/validation` package — whitelist, length, and format checks |
 | Broken access control | IDOR prevented by design — employee records loaded from `session.User.ID`, never from client input |
-| Login rate limiting | 5 failed attempts → 2-minute lockout per username |
+| Login rate limiting | 5 failed attempts → 2-minute lockout per username + client IP combination |
 | Session inactivity timeout | Sessions expire after 15 minutes of inactivity and have a 1-hour absolute expiry |
 | Security headers | CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` |
 | Audit trail | `last_updated_by` and `last_updated_at` automatically updated on every record change |
@@ -116,7 +116,8 @@ northgate-srms/
 │   ├── middleware/
 │   │   └── security_headers.go   # CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
 │   ├── security/
-│   │   └── login_limiter.go      # Per-username rate limiting and lockout
+│   │   └── login_limiter.go      # Per-username + client IP rate limiting and lockout
+│   │   └── login_limiter_test.go  # Unit tests for lockout scope and reset behaviour
 │   ├── storage/
 │   │   ├── db.go                 # Database initialisation and schema creation
 │   │   ├── records.go            # Employee record queries — all parameterised
@@ -223,7 +224,7 @@ This improves robustness because sessions survive server restarts and can be rem
 
 ## Running tests
 
-Unit tests cover the input validation package:
+Unit tests cover the input validation package and the login rate limiter:
 
 ```bash
 go test ./...
@@ -244,6 +245,8 @@ The following manual checks were used to verify the session storage upgrade and 
 | Server restart | Session remains valid after restarting the Go server, until expiry or inactivity timeout |
 | Inactivity timeout | Session becomes invalid after 15 minutes of inactivity |
 | Invalid cookie | Modified or deleted session cookie is rejected |
+| Login rate limiting | Five failed login attempts for the same username and client IP trigger a temporary lockout |
+| Lockout scope | A lockout applies to the username + client IP combination rather than the username alone |
 
 Example SQLite inspection after login:
 
@@ -262,7 +265,7 @@ This is an assessment prototype intentionally scoped for clarity and focus on se
 |---|---|
 | No HTTPS | `Secure` cookie flag disabled for `localhost`; required in any real deployment |
 | No security event logging | Failed logins, denied access, and CSRF rejections are not persisted |
-| Rate limiting by username only | IP-based limiting would be more robust against distributed attacks |
+| Simplified IP handling for rate limiting | The limiter uses the client address observed by the Go server through `r.RemoteAddr`; production deployments behind trusted reverse proxies should carefully configure trusted forwarding headers such as `X-Forwarded-For` |
 | No MFA | Especially relevant for admin accounts; not implemented because the assessment already includes two additional security features and database-backed hashed sessions were prioritised as a lower-risk session-management improvement |
 | No public registration | Users created via seed data only |
 | No password reset | Out of scope for this prototype |

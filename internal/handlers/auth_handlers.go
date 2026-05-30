@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"strings"
 
@@ -86,7 +87,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.LoginLimiter.IsLocked(username) {
+	clientIP := clientIPFromRequest(r)
+
+	if h.LoginLimiter.IsLocked(username, clientIP) {
 		h.CSRF.Delete(preSessionID)
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
@@ -94,13 +97,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := auth.AuthenticateUser(h.DB, username, password)
 	if err != nil {
-		h.LoginLimiter.RegisterFailure(username)
+		h.LoginLimiter.RegisterFailure(username, clientIP)
 		h.CSRF.Delete(preSessionID)
 		h.renderLoginWithError(w, "Invalid username or password.")
 		return
 	}
 
-	h.LoginLimiter.RegisterSuccess(username)
+	h.LoginLimiter.RegisterSuccess(username, clientIP)
 	h.CSRF.Delete(preSessionID)
 	expireLoginCSRFCookie(w)
 
@@ -197,4 +200,13 @@ func generatePreSessionID() (string, error) {
 	}
 
 	return hex.EncodeToString(bytes), nil
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+
+	return host
 }

@@ -75,7 +75,7 @@ The system uses three core database tables:
 
 The `users` table stores authentication and role information. The `employee_records` table stores the sensitive HR record linked to each user. This separation keeps login credentials and HR data in different parts of the data model, making the design easier to reason about and safer to maintain.
 
-The relationship between the two tables is one-to-one:
+The relationship between `users` and `employee_records` is one-to-one:
 
 ```text
 users.id  →  employee_records.user_id
@@ -658,7 +658,7 @@ Runtime configuration supplied through environment variables should also be trea
 | Cross-Site Request Forgery (CSRF) | A malicious site tricks a logged-in user into submitting a state-changing request | Unwanted record updates or logout actions | CSRF token required on all state-changing `POST` routes; no state-changing `GET` requests; SameSite session cookies |
 | Session hijacking or session misuse | A session cookie is stolen, guessed, reused, or remains valid longer than necessary | Attacker acts as the logged-in user | Random session IDs; HttpOnly and SameSite cookie flags; SQLite-backed server-side sessions; hashed session identifiers in the database; absolute expiry; inactivity timeout; logout deletes the server-side session row |
 | Weak password storage | Passwords stored in plaintext or weak hashes | Breach exposes real credentials | Store only password hashes using bcrypt; never log passwords |
-| Brute-force login attempts | Attacker repeatedly guesses usernames and passwords | Account compromise | Candidate additional feature: login rate limiting or temporary lockout |
+| Brute-force login attempts | Attacker repeatedly guesses usernames and passwords | Account compromise | Login rate limiting using the username + client IP combination; temporary lockout after repeated failures; generic error messages |
 | Malformed or oversized input | User submits unexpected, very long, or invalid data | Validation bypass, crashes, inconsistent records, or stored malicious content | Server-side validation for length, format, and whitelist fields before database updates |
 | Missing auditability | Records are changed without knowing who changed them | Loss of accountability and weaker integrity | Automatically update `last_updated_by` and `last_updated_at` on every record update |
 | Information leakage through errors | Detailed database or server errors are shown to users | Attackers learn internal details | Generic user-facing error messages; detailed errors kept out of templates and not exposed to users |
@@ -762,8 +762,8 @@ This feature limits repeated failed login attempts.
 Proposed behaviour:
 
 ```text
-If a username has 5 failed login attempts:
-    temporarily block further login attempts for that username
+If the same username + client IP combination has 5 failed login attempts:
+    temporarily block further login attempts for that username from that client IP
     block duration: 2 minutes
 ```
 
@@ -777,24 +777,29 @@ Security benefit:
 Implementation approach:
 
 - track failed login attempts server-side;
+- key each attempt record by normalised username + client IP;
+- extract the client IP from the address observed by the Go server via `r.RemoteAddr`;
 - store the number of failed attempts and lockout expiry time;
-- reset failed attempts after a successful login;
+- reset failed attempts for the matching username + client IP after a successful login;
 - return a generic error message for failed and locked login attempts.
 
 Testing approach:
 
 | Test | Expected result |
 |---|---|
-| 1–4 failed attempts | Login remains available |
-| 5 failed attempts | Login is temporarily blocked |
-| Correct password during lockout | Login remains blocked |
+| 1–4 failed attempts for the same username + IP | Login remains available |
+| 5 failed attempts for the same username + IP | Login is temporarily blocked for that combination |
+| Correct password during lockout from the same IP | Login remains blocked |
+| Same username from a different IP | Not affected by the lockout created from the first IP |
+| Different username from the same IP | Not affected by the first user's lockout |
 | Correct password after lockout expires | Login succeeds |
-| Successful login | Failed attempt counter resets |
+| Successful login | Failed attempt counter resets for the matching username + IP |
 
 Trade-off:
 
-- legitimate users may be temporarily blocked after repeated mistakes;
-- a username-based lockout could be abused to inconvenience another user;
+- legitimate users may be temporarily blocked after repeated mistakes from the same client IP;
+- using username + IP reduces the risk that an attacker can deliberately lock out another user globally by repeatedly submitting that user's username;
+- the control still remains simplified because production systems behind reverse proxies must handle trusted forwarding headers carefully;
 - the short lockout window keeps the control proportionate for the assessment version.
 
 Assessment value:
@@ -977,7 +982,7 @@ This alternative would be especially strong if the report focuses more heavily o
 Both shortlisted features were implemented as planned:
 
 ```text
-Additional Feature 1: Login rate limiting / temporary lockout  ✓ Implemented
+Additional Feature 1: Login rate limiting / temporary lockout  ✓ Implemented using username + client IP scope
 Additional Feature 2: Session timeout after inactivity         ✓ Implemented
 Session storage upgrade: SQLite-backed hashed sessions         ✓ Implemented
 ```
@@ -1152,20 +1157,21 @@ The current preferred additional security features are:
 
 | ID | Test steps | Expected behaviour | Pass criteria |
 |---|---|---|---|
-| AF1 | Submit 1–4 wrong passwords for the same username | Login remains available | User is not locked too early |
-| AF2 | Submit 5 wrong passwords for the same username | Login is temporarily blocked | Lockout is activated |
-| AF3 | Submit correct password during lockout | Login remains blocked | Lockout cannot be bypassed |
-| AF4 | Wait until lockout expires, then use correct password | Login succeeds | Lockout expires correctly |
-| AF5 | Successful login after previous failures below threshold | Failed counter resets | Future failures start from zero |
+| AF1 | Submit 1–4 wrong passwords for the same username + client IP | Login remains available | User is not locked too early |
+| AF2 | Submit 5 wrong passwords for the same username + client IP | Login is temporarily blocked for that combination | Lockout is activated |
+| AF3 | Submit correct password during lockout from the same client IP | Login remains blocked | Lockout cannot be bypassed during the lockout window |
+| AF4 | Check same username from a different IP in unit test | Not locked | Lockout is not global for the username alone |
+| AF5 | Check different username from the same IP in unit test | Not locked | Lockout does not block unrelated users from the same IP |
+| AF6 | Successful login for the matching username + IP | Failed counter resets for that combination | Future failures for that combination start from zero |
 
 #### 8.12.2 Session timeout tests
 
 | ID | Test steps | Expected behaviour | Pass criteria |
 |---|---|---|---|
-| AF6 | Log in and make a request before timeout | Session remains valid | User stays authenticated |
-| AF7 | Log in and wait beyond timeout | Session is invalidated | User must log in again |
-| AF8 | Access protected route after timeout | Redirect to login | Expired session cannot access data |
-| AF9 | Log in again after timeout | New session is created | User can continue normally |
+| AF7 | Log in and make a request before timeout | Session remains valid | User stays authenticated |
+| AF8 | Log in and wait beyond timeout | Session is invalidated | User must log in again |
+| AF9 | Access protected route after timeout | Redirect to login | Expired session cannot access data |
+| AF10 | Log in again after timeout | New session is created | User can continue normally |
 
 If implementation time becomes a constraint, security event logging is the backup additional feature.
 
@@ -1193,7 +1199,8 @@ Testing evidence may include:
 - database screenshots or query output showing audit fields;
 - database query output showing hashed sessions, user IDs, expiry times, and logout deletion;
 - short notes explaining manual test results;
-- optional Go test output if unit tests are added.
+- optional Go test output if unit tests are added;
+- automated test output for the login limiter showing username + client IP lockout scope.
 
 The README should explain how to run the application and which demo accounts to use.
 
@@ -1579,8 +1586,9 @@ Feature 2: Session timeout after inactivity
 Tasks:
 
 - track failed login attempts;
-- lock login temporarily after repeated failures;
-- reset failed attempts after successful login;
+- scope failed attempts by normalised username + client IP;
+- lock login temporarily after repeated failures for the same username + client IP;
+- reset failed attempts for the matching username + client IP after successful login;
 - use generic error messages.
 
 Expected outcome:
@@ -1789,3 +1797,18 @@ This change was implemented instead of adding two-factor authentication because 
 ### 10.6 Second administrator account added for assessment testing
 
 During review, the seed data was updated to include a second administrator account. The final demo accounts now include two HR administrators (`admin` and `hrmanager`) and two regular employee accounts (`alice` and `bob`). This ensures the application fully supports testing both administrator and regular-user behaviour with more than one account in each role.
+
+### 10.7 Rate limiting updated to use username and client IP
+
+The initial login rate limiter tracked failed attempts by username only. This was simple and effective against repeated guessing, but it introduced a denial-of-service weakness: an attacker could repeatedly submit failed logins for another user's username and temporarily lock that user out.
+
+**Resolution:** The limiter now scopes failed attempts by the combination of normalised username and client IP. The client IP is taken from the remote address observed by the Go server using `r.RemoteAddr`. This means a lockout applies to a specific username + client IP combination rather than to the username globally.
+
+```text
+Rate limit key: normalised username + "|" + client IP
+Example: alice|127.0.0.1
+```
+
+This reduces the risk of deliberate account lockout abuse while still slowing repeated password guessing. The implementation remains intentionally simple for the local assessment prototype. In a production deployment behind a trusted reverse proxy, client IP extraction would need to be reviewed carefully and configured using trusted forwarding headers such as `X-Forwarded-For`, rather than blindly trusting client-supplied headers.
+
+Automated unit tests were added for the login limiter to confirm that a lockout affects the same username + IP combination, does not affect the same username from a different IP, and does not affect a different username from the same IP.

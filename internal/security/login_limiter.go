@@ -1,6 +1,7 @@
 package security
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,11 +27,12 @@ func NewLoginLimiter() *LoginLimiter {
 	}
 }
 
-func (l *LoginLimiter) IsLocked(username string) bool {
+func (l *LoginLimiter) IsLocked(username, clientIP string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	key := loginAttemptKey(username, clientIP)
 
-	attempt, exists := l.attempts[username]
+	attempt, exists := l.attempts[key]
 	if !exists {
 		return false
 	}
@@ -40,29 +42,38 @@ func (l *LoginLimiter) IsLocked(username string) bool {
 	}
 
 	if time.Now().After(attempt.LockedUntil) {
-		delete(l.attempts, username)
+		delete(l.attempts, key)
 		return false
 	}
 
 	return true
 }
 
-func (l *LoginLimiter) RegisterFailure(username string) {
+func (l *LoginLimiter) RegisterFailure(username, clientIP string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	key := loginAttemptKey(username, clientIP)
 
-	attempt := l.attempts[username]
+	attempt := l.attempts[key]
 	attempt.FailedAttempts++
 
 	if attempt.FailedAttempts >= MaxFailedLoginAttempts {
 		attempt.LockedUntil = time.Now().Add(LoginLockoutDuration)
 	}
-	l.attempts[username] = attempt
+	l.attempts[key] = attempt
 }
 
-func (l *LoginLimiter) RegisterSuccess(username string) {
+func (l *LoginLimiter) RegisterSuccess(username, clientIP string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	key := loginAttemptKey(username, clientIP)
 
-	delete(l.attempts, username)
+	delete(l.attempts, key)
+}
+
+func loginAttemptKey(username, clientIP string) string {
+	normalisedUsername := strings.ToLower(strings.TrimSpace(username))
+	normalisedIP := strings.TrimSpace(clientIP)
+
+	return normalisedUsername + "|" + normalisedIP
 }
