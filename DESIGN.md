@@ -1201,6 +1201,7 @@ Testing evidence may include:
 - short notes explaining manual test results;
 - optional Go test output if unit tests are added;
 - automated test output for the login limiter showing username + client IP lockout scope.
+- automated test output for CSRF token acceptance, invalid token rejection, missing token rejection, and deleted token rejection;
 
 The README should explain how to run the application and which demo accounts to use.
 

@@ -107,6 +107,7 @@ northgate-srms/
 │   │   └── config.go             # Environment-based runtime config with validation
 │   ├── csrf/
 │   │   └── csrf.go               # CSRF token generation and constant-time validation
+│   │   └── csrf_test.go          # Unit tests for CSRF token validation and rejection
 │   ├── handlers/
 │   │   ├── auth_handlers.go      # Login, logout — CSRF and rate limiting integrated
 │   │   ├── admin_handlers.go     # Admin record list, view, edit, update
@@ -224,7 +225,7 @@ This improves robustness because sessions survive server restarts and can be rem
 
 ## Running tests
 
-Unit tests cover the input validation package and the login rate limiter:
+Unit tests cover input validation, CSRF token validation, and the login rate limiter:
 
 ```bash
 go test ./...
