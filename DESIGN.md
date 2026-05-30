@@ -1200,8 +1200,8 @@ Testing evidence may include:
 - database query output showing hashed sessions, user IDs, expiry times, and logout deletion;
 - short notes explaining manual test results;
 - optional Go test output if unit tests are added;
-- automated test output for the login limiter showing username + client IP lockout scope.
-- automated test output for CSRF token acceptance, invalid token rejection, missing token rejection, and deleted token rejection;
+- automated test output for the login limiter showing username + client IP lockout scope;
+- automated test output for CSRF token acceptance, invalid token rejection, missing token rejection, and deleted token rejection.
 
 The README should explain how to run the application and which demo accounts to use.
 
@@ -1378,7 +1378,7 @@ Security focus:
 - password hashes only;
 - generic login failure messages;
 - `HttpOnly` and `SameSite` cookie attributes;
-- session invalidation on logout.
+- session invalidation on logout;
 - database-backed sessions that survive server restarts;
 - raw session tokens are not stored in the database.
 
@@ -1799,6 +1799,7 @@ This change was implemented instead of adding two-factor authentication because 
 
 During review, the seed data was updated to include a second administrator account. The final demo accounts now include two HR administrators (`admin` and `hrmanager`) and two regular employee accounts (`alice` and `bob`). This ensures the application fully supports testing both administrator and regular-user behaviour with more than one account in each role.
 
+
 ### 10.7 Rate limiting updated to use username and client IP
 
 The initial login rate limiter tracked failed attempts by username only. This was simple and effective against repeated guessing, but it introduced a denial-of-service weakness: an attacker could repeatedly submit failed logins for another user's username and temporarily lock that user out.
@@ -1813,3 +1814,11 @@ Example: alice|127.0.0.1
 This reduces the risk of deliberate account lockout abuse while still slowing repeated password guessing. The implementation remains intentionally simple for the local assessment prototype. In a production deployment behind a trusted reverse proxy, client IP extraction would need to be reviewed carefully and configured using trusted forwarding headers such as `X-Forwarded-For`, rather than blindly trusting client-supplied headers.
 
 Automated unit tests were added for the login limiter to confirm that a lockout affects the same username + IP combination, does not affect the same username from a different IP, and does not affect a different username from the same IP.
+
+### 10.8 CSRF token storage limitation
+
+CSRF tokens are currently stored in memory by the CSRF manager. This is appropriate for the single-instance assessment prototype because it keeps the implementation simple and allows missing, invalid, and deleted tokens to be tested clearly.
+
+However, this design has a production limitation: CSRF tokens are lost when the server restarts, and an in-memory token store would not work reliably in a multi-instance deployment where different requests may be handled by different application instances.
+
+A future improvement would be to bind CSRF tokens to the persistent session state or store them in a database-backed token store. This would make CSRF protection more robust across server restarts and horizontally scaled deployments while preserving the current server-side validation behaviour.

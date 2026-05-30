@@ -106,7 +106,7 @@ northgate-srms/
 │   ├── config/
 │   │   └── config.go             # Environment-based runtime config with validation
 │   ├── csrf/
-│   │   └── csrf.go               # CSRF token generation and constant-time validation
+│   │   ├── csrf.go               # CSRF token generation and constant-time validation
 │   │   └── csrf_test.go          # Unit tests for CSRF token validation and rejection
 │   ├── handlers/
 │   │   ├── auth_handlers.go      # Login, logout — CSRF and rate limiting integrated
@@ -117,8 +117,8 @@ northgate-srms/
 │   ├── middleware/
 │   │   └── security_headers.go   # CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
 │   ├── security/
-│   │   └── login_limiter.go      # Per-username + client IP rate limiting and lockout
-│   │   └── login_limiter_test.go  # Unit tests for lockout scope and reset behaviour
+│   │   ├── login_limiter.go      # Per-username + client IP rate limiting and lockout
+│   │   └── login_limiter_test.go # Unit tests for lockout scope and reset behaviour
 │   ├── storage/
 │   │   ├── db.go                 # Database initialisation and schema creation
 │   │   ├── records.go            # Employee record queries — all parameterised
@@ -266,6 +266,7 @@ This is an assessment prototype intentionally scoped for clarity and focus on se
 |---|---|
 | No HTTPS | `Secure` cookie flag disabled for `localhost`; required in any real deployment |
 | No security event logging | Failed logins, denied access, and CSRF rejections are not persisted |
+| CSRF tokens stored in memory | Appropriate for this single-instance assessment prototype, but tokens are lost on server restart and would not work well in a multi-instance deployment; a future improvement would be to bind CSRF tokens to persistent session state or store them in a database-backed token store |
 | Simplified IP handling for rate limiting | The limiter uses the client address observed by the Go server through `r.RemoteAddr`; production deployments behind trusted reverse proxies should carefully configure trusted forwarding headers such as `X-Forwarded-For` |
 | No MFA | Especially relevant for admin accounts; not implemented because the assessment already includes two additional security features and database-backed hashed sessions were prioritised as a lower-risk session-management improvement |
 | No public registration | Users created via seed data only |
