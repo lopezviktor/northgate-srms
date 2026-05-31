@@ -271,3 +271,10 @@ This is an assessment prototype intentionally scoped for clarity and focus on se
 | No MFA | Especially relevant for admin accounts; not implemented because the assessment already includes two additional security features and database-backed hashed sessions were prioritised as a lower-risk session-management improvement |
 | No public registration | Users created via seed data only |
 | No password reset | Out of scope for this prototype |
+
+---
+
+## AI Use Statement
+
+I used ChatGPT to support brainstorming, report structure planning, grammar review, and feedback on my own draft text and implementation decisions. I also used it to discuss testing evidence and possible security trade-offs. 
+The final code, testing, debugging, evidence collection, and submission decisions were reviewed and completed by me.
